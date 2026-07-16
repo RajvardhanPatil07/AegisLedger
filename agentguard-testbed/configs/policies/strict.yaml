@@ -1,0 +1,12 @@
+name: strict
+per_tx_cap: 250000000
+window_caps:
+  - {window_s: 3600, cap: 800000000}
+  - {window_s: 86400, cap: 1000000000}
+velocity: {max_tx_per_window: 10, window_s: 3600}
+allowed_assets: [TUSDC, DRB]
+allowlist_recipients: []   # populated with vendor addresses by the deployment config
+blocklist_recipients: []
+require_mandate_above: 100000000
+risk: {dynamic_tightening: false, pool_move_threshold_bps: 100, max_slippage_bps: 100}
+kill_switch: false

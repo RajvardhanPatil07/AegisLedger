@@ -1,0 +1,12 @@
+name: mev-aware
+per_tx_cap: 5000000000
+window_caps:
+  - {window_s: 3600, cap: 20000000000}
+  - {window_s: 86400, cap: 50000000000}
+velocity: {max_tx_per_window: 30, window_s: 3600}
+allowed_assets: [TUSDC, DRB]
+allowlist_recipients: []
+blocklist_recipients: []
+require_mandate_above: 100000000
+risk: {dynamic_tightening: true, pool_move_threshold_bps: 100, max_slippage_bps: 50}
+kill_switch: false

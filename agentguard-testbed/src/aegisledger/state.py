@@ -1,10 +1,12 @@
 """Atomic lifecycle and reservation state used by the policy service."""
+
 from __future__ import annotations
 
 import threading
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Protocol
 
 from .canonical import uuid7
 from .contracts import LifecycleState, ProposalV1, require_transition
@@ -65,14 +67,38 @@ class ProposalRecord:
     state_version: int
     reason_codes: tuple[str, ...] = ()
     reservation_id: uuid.UUID | None = None
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 @dataclass(frozen=True)
 class ReservationResult:
     record: ProposalRecord
     created: bool
+
+
+class StateStore(Protocol):
+    def healthcheck(self) -> None: ...
+
+    def get(self, proposal_id: uuid.UUID) -> ProposalRecord | None: ...
+
+    def reserve(self, proposal: ProposalV1, policy: PolicyV1) -> ReservationResult: ...
+
+    def simulate(self, proposal: ProposalV1, policy: PolicyV1) -> tuple[str, ...]: ...
+
+    def transition(self, proposal_id: uuid.UUID, target: LifecycleState) -> ProposalRecord: ...
+
+    def register_decision_nonce(self, nonce: uuid.UUID) -> None: ...
+
+    def register_wallet_nonce(self, wallet: str, chain_id: int, nonce: int) -> None: ...
+
+    def budget_totals(
+        self,
+        principal: str,
+        wallet: str,
+        chain_id: int,
+        asset: str,
+    ) -> tuple[int, int]: ...
 
 
 class MemoryStateStore:
@@ -94,6 +120,9 @@ class MemoryStateStore:
     def _next_version(self) -> int:
         self._version += 1
         return self._version
+
+    def healthcheck(self) -> None:
+        return None
 
     def get(self, proposal_id: uuid.UUID) -> ProposalRecord | None:
         with self._lock:
@@ -125,7 +154,7 @@ class MemoryStateStore:
                     chain_id=proposal.chain_id,
                     asset=proposal.asset,
                     amount=proposal.amount,
-                    created_at=datetime.now(timezone.utc),
+                    created_at=datetime.now(UTC),
                 )
                 self._reservations[reservation_id] = reservation
                 record = ProposalRecord(
@@ -154,7 +183,7 @@ class MemoryStateStore:
             and item.chain_id == proposal.chain_id
             and item.asset == proposal.asset
         ]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for cap in policy.rolling_caps:
             spent = sum(
                 item.amount
@@ -164,9 +193,7 @@ class MemoryStateStore:
             if spent + proposal.amount > cap.amount:
                 reasons.append("ROLLING_CAP_EXCEEDED")
                 break
-        recent_count = sum(
-            1 for item in active if (now - item.created_at).total_seconds() < 3600
-        )
+        recent_count = sum(1 for item in active if (now - item.created_at).total_seconds() < 3600)
         if recent_count + 1 > policy.maximum_transactions_per_hour:
             reasons.append("VELOCITY_EXCEEDED")
         return reasons
@@ -183,7 +210,7 @@ class MemoryStateStore:
                 reservation.settled = True
             record.state = target
             record.state_version = self._next_version()
-            record.updated_at = datetime.now(timezone.utc)
+            record.updated_at = datetime.now(UTC)
             return record
 
     def register_decision_nonce(self, nonce: uuid.UUID) -> None:

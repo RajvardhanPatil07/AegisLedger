@@ -7,12 +7,12 @@ pattern, a susceptible agent follows it. A "model-level defense" sanitizer
 catches plaintext patterns but misses encoded payloads (Morse/base64) — mirroring
 measured real-world behavior (e.g., the 2026 Morse-code wallet-drain incident).
 """
+
 from __future__ import annotations
 
 import base64
 import re
-from dataclasses import dataclass, field
-
+from dataclasses import dataclass
 
 INJECTION_RE = re.compile(
     r"(transfer|send|pay)\s+(\d+(?:\.\d+)?)\s*(usdc|drb|tokens?)?\s*(?:to|towards)\s+"
@@ -21,13 +21,42 @@ INJECTION_RE = re.compile(
 )
 
 MORSE_MAP = {
-    ".-": "A", "-...": "B", "-.-.": "C", "-..": "D", ".": "E", "..-.": "F",
-    "--.": "G", "....": "H", "..": "I", ".---": "J", "-.-": "K", ".-..": "L",
-    "--": "M", "-.": "N", "---": "O", ".--.": "P", "--.-": "Q", ".-.": "R",
-    "...": "S", "-": "T", "..-": "U", "...-": "V", ".--": "W", "-..-": "X",
-    "-.--": "Y", "--..": "Z", "-----": "0", ".----": "1", "..---": "2",
-    "...--": "3", "....-": "4", ".....": "5", "-....": "6", "--...": "7",
-    "---..": "8", "----.": "9",
+    ".-": "A",
+    "-...": "B",
+    "-.-.": "C",
+    "-..": "D",
+    ".": "E",
+    "..-.": "F",
+    "--.": "G",
+    "....": "H",
+    "..": "I",
+    ".---": "J",
+    "-.-": "K",
+    ".-..": "L",
+    "--": "M",
+    "-.": "N",
+    "---": "O",
+    ".--.": "P",
+    "--.-": "Q",
+    ".-.": "R",
+    "...": "S",
+    "-": "T",
+    "..-": "U",
+    "...-": "V",
+    ".--": "W",
+    "-..-": "X",
+    "-.--": "Y",
+    "--..": "Z",
+    "-----": "0",
+    ".----": "1",
+    "..---": "2",
+    "...--": "3",
+    "....-": "4",
+    ".....": "5",
+    "-....": "6",
+    "--...": "7",
+    "---..": "8",
+    "----.": "9",
 }
 
 
@@ -52,6 +81,7 @@ def try_base64_decode(text: str) -> str | None:
 class Sanitizer:
     """Model-level defense: strips plaintext injection patterns. Known-bypassable
     by encoded payloads — this asymmetry is the measured property."""
+
     enabled: bool = False
     block_encoded: bool = False  # idealized upper-bound defense (not default)
 
@@ -69,15 +99,16 @@ class Sanitizer:
 
 @dataclass
 class PaymentInstruction:
-    amount: int            # micro-USDC
+    amount: int  # micro-USDC
     to: str
     asset: str = "TUSDC"
     purpose: str = ""
     encoded_channel: bool = False
 
 
-def extract_instructions(content: str, susceptible: bool = True,
-                         attacker_address: str = "0xattacker") -> list[PaymentInstruction]:
+def extract_instructions(
+    content: str, susceptible: bool = True, attacker_address: str = "0xattacker"
+) -> list[PaymentInstruction]:
     """Parse plaintext and encoded payment instructions from content."""
     if not susceptible:
         return []
@@ -87,8 +118,9 @@ def extract_instructions(content: str, susceptible: bool = True,
         to = m.group(4)
         if to.lower() == "attacker":
             to = attacker_address
-        out.append(PaymentInstruction(amount=int(amt * 1_000_000), to=to,
-                                      purpose="injected-plaintext"))
+        out.append(
+            PaymentInstruction(amount=int(amt * 1_000_000), to=to, purpose="injected-plaintext")
+        )
     # Encoded channels
     morse = re.findall(r"(?:[.\-]{1,5}(?:\s+|$)){3,}", content)
     for seq in morse:
@@ -98,9 +130,14 @@ def extract_instructions(content: str, susceptible: bool = True,
             to = m.group(4)
             if to.lower() == "attacker":
                 to = attacker_address
-            out.append(PaymentInstruction(amount=int(amt * 1_000_000), to=to,
-                                          purpose="injected-morse",
-                                          encoded_channel=True))
+            out.append(
+                PaymentInstruction(
+                    amount=int(amt * 1_000_000),
+                    to=to,
+                    purpose="injected-morse",
+                    encoded_channel=True,
+                )
+            )
     b64 = re.findall(r"\b([A-Za-z0-9+/]{24,}={0,2})(?![A-Za-z0-9+/=])", content)
     for cand in b64:
         decoded = try_base64_decode(cand)
@@ -111,6 +148,9 @@ def extract_instructions(content: str, susceptible: bool = True,
             to = m.group(4)
             if to.lower() == "attacker":
                 to = attacker_address
-            out.append(PaymentInstruction(amount=int(amt * 1_000_000), to=to,
-                                          purpose="injected-b64", encoded_channel=True))
+            out.append(
+                PaymentInstruction(
+                    amount=int(amt * 1_000_000), to=to, purpose="injected-b64", encoded_channel=True
+                )
+            )
     return out

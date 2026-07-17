@@ -1,0 +1,193 @@
+name: aegisledger
+
+services:
+  postgres:
+    image: postgres:18.4-bookworm
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./deploy/postgres/init-keycloak.sh:/docker-entrypoint-initdb.d/10-keycloak.sh:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.0
+    command: ["start-dev", "--import-realm", "--hostname=http://localhost:8080"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: ${POSTGRES_USER}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+      DEV_RESEARCHER_PASSWORD: ${DEV_RESEARCHER_PASSWORD}
+      DEV_POLICY_ADMIN_A_PASSWORD: ${DEV_POLICY_ADMIN_A_PASSWORD}
+      DEV_POLICY_ADMIN_B_PASSWORD: ${DEV_POLICY_ADMIN_B_PASSWORD}
+      DEV_AUDITOR_PASSWORD: ${DEV_AUDITOR_PASSWORD}
+    volumes:
+      - ./deploy/keycloak/aegisledger-realm.json:/opt/keycloak/data/import/aegisledger-realm.json:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:9000:9000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    restart: unless-stopped
+
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:v1.7.1
+    entrypoint: ["anvil"]
+    command: ["--host", "0.0.0.0", "--chain-id", "31337", "--block-time", "1"]
+    ports:
+      - "127.0.0.1:8545:8545"
+    restart: unless-stopped
+
+  signer:
+    build:
+      context: .
+      dockerfile: signer/Dockerfile
+      args:
+        BUILD_MEASUREMENT: local-compose-v1
+    environment:
+      AEGIS_POLICY_PUBLIC_KEY_HEX: ${AEGIS_POLICY_PUBLIC_KEY_HEX}
+      AEGIS_ALLOWED_CHAIN_IDS: "31337"
+      AEGIS_ALLOWED_POLICY_HASHES: ${AEGIS_ALLOWED_POLICY_HASHES}
+      AEGIS_MANAGED_WALLETS: "0x1212121212121212121212121212121212121212"
+      AEGIS_SIGNER_BUILD_MEASUREMENT: local-compose-v1
+      AEGIS_SIGNER_BIND: "0.0.0.0:50051"
+      AEGIS_TLS_CERT: /run/tls/signer.pem
+      AEGIS_TLS_KEY: /run/tls/signer-key.pem
+      AEGIS_CLIENT_CA: /run/tls/ca.pem
+      RUST_LOG: info
+    volumes:
+      - ./artifacts/dev-certs:/run/tls:ro
+    expose:
+      - "50051"
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      AEGIS_ENVIRONMENT: development
+      AEGIS_STATE_BACKEND: postgres
+      AEGIS_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      AEGIS_POLICY_SIGNING_SEED: ${AEGIS_POLICY_SIGNING_SEED}
+      AEGIS_COMMIT_SHA: ${AEGIS_COMMIT_SHA}
+      AEGIS_BOOTSTRAP_DEVELOPMENT_POLICY: "true"
+      AEGIS_ALLOWED_BUILD_MEASUREMENTS: local-compose-v1
+      AEGIS_OIDC_ISSUER: http://localhost:8080/realms/aegisledger
+      AEGIS_OIDC_AUDIENCE: aegisledger-api
+      AEGIS_OIDC_JWKS_URL: http://keycloak:8080/realms/aegisledger/protocol/openid-connect/certs
+      AEGIS_OTLP_ENDPOINT: http://otel-collector:4317
+      AEGIS_LOG_LEVEL: INFO
+      AEGIS_API_HOST: 0.0.0.0
+    volumes:
+      - experiment-data:/app/artifacts/experiments
+      - ./artifacts/dev-certs:/run/tls:ro
+    ports:
+      - "127.0.0.1:${AEGIS_API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=32m
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        VITE_OIDC_ISSUER: http://localhost:8080/realms/aegisledger
+    ports:
+      - "127.0.0.1:${AEGIS_WEB_PORT:-4173}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  otel-collector:
+    image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.156.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./deploy/otel/collector.yaml:/etc/otelcol/config.yaml:ro
+    expose:
+      - "4317"
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=7d"]
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:12.0.2
+    environment:
+      GF_SECURITY_ADMIN_USER: local-admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  experiment-data:
+  prometheus-data:
+  grafana-data:

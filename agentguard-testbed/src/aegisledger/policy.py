@@ -1,4 +1,5 @@
 """Fail-closed policy contracts used for approval, hashing, and simulation."""
+
 from __future__ import annotations
 
 import hashlib
@@ -82,7 +83,7 @@ class PolicyV1(StrictModel):
         return tuple(sorted(set(values)))
 
     @model_validator(mode="after")
-    def explicit_constraints_are_coherent(self) -> "PolicyV1":
+    def explicit_constraints_are_coherent(self) -> PolicyV1:
         windows = [cap.window_seconds for cap in self.rolling_caps]
         if len(windows) != len(set(windows)):
             raise ValueError("rolling cap windows must be unique")

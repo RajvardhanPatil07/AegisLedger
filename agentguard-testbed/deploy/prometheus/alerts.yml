@@ -1,0 +1,46 @@
+groups:
+  - name: aegisledger-availability
+    rules:
+      - alert: AegisLedgerApiUnavailable
+        expr: up{job="aegisledger-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: AegisLedger API is unavailable
+          runbook_url: docs/OPERATIONS.md#api-or-identity-provider-unavailable
+
+      - alert: AegisLedgerIdentityProviderUnavailable
+        expr: up{job="keycloak"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: AegisLedger identity provider is unavailable
+          runbook_url: docs/OPERATIONS.md#api-or-identity-provider-unavailable
+
+      - alert: AegisLedgerHighErrorRate
+        expr: |
+          sum(rate(aegisledger_http_requests_total{status=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(aegisledger_http_requests_total[5m])), 0.001)
+          > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than 5% of AegisLedger requests are failing
+          runbook_url: docs/OPERATIONS.md#elevated-api-error-rate-or-latency
+
+      - alert: AegisLedgerHighLatency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(aegisledger_http_request_duration_seconds_bucket[5m])) by (le)
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: AegisLedger p95 request latency exceeds one second
+          runbook_url: docs/OPERATIONS.md#elevated-api-error-rate-or-latency

@@ -1,10 +1,11 @@
 """Signed, attenuating mandates with atomic budget and cart replay protection."""
+
 from __future__ import annotations
 
 import hashlib
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -60,7 +61,7 @@ class IntentMandateV1(StrictModel):
     def normalize_expiry(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("expires_at must include a UTC offset")
-        return value.astimezone(timezone.utc)
+        return value.astimezone(UTC)
 
     def signing_payload(self) -> bytes:
         return canonical_json(self.model_dump(mode="json", exclude={"signature"}))
@@ -93,7 +94,7 @@ class CartMandateV1(StrictModel):
     def normalize_expiry(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("expires_at must include a UTC offset")
-        return value.astimezone(timezone.utc)
+        return value.astimezone(UTC)
 
     def signing_payload(self) -> bytes:
         return canonical_json(self.model_dump(mode="json", exclude={"signature"}))
@@ -151,7 +152,7 @@ class MandateLedger:
                 raise MandateError("intent signer does not match issuer")
             if not self._verify_signature(public_key, mandate.signing_payload(), mandate.signature):
                 raise MandateError("invalid intent signature")
-            if mandate.expires_at <= datetime.now(timezone.utc):
+            if mandate.expires_at <= datetime.now(UTC):
                 raise MandateError("mandate expired")
             nonce_key = (mandate.issuer, mandate.nonce)
             if nonce_key in self._intent_nonces:
@@ -186,7 +187,7 @@ class MandateLedger:
     ) -> None:
         with self._lock:
             mandate = self._active(cart.mandate_id)
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             if cart.expires_at <= now:
                 raise MandateError("cart expired")
             if address_of(merchant_public_key).lower() != cart.merchant:
@@ -195,10 +196,14 @@ class MandateLedger:
                 merchant_public_key, cart.signing_payload(), cart.signature
             ):
                 raise MandateError("invalid cart signature")
-            if cart.cart_hash() in self._used_cart_hashes or (
-                cart.merchant,
-                cart.nonce,
-            ) in self._used_cart_nonces:
+            if (
+                cart.cart_hash() in self._used_cart_hashes
+                or (
+                    cart.merchant,
+                    cart.nonce,
+                )
+                in self._used_cart_nonces
+            ):
                 raise MandateError("cart replay detected")
             if cart.intent_hash != mandate.intent_hash():
                 raise MandateError("cart is bound to a different intent")
@@ -223,11 +228,13 @@ class MandateLedger:
                 raise MandateError("mandate recipient mismatch")
             if cart.amount != proposal.amount:
                 raise MandateError("cart amount does not match proposal")
-            spent = self._spent[mandate.mandate_id]
+            mandate_id = mandate.mandate_id
+            assert mandate_id is not None
+            spent = self._spent[mandate_id]
             if spent + proposal.amount > mandate.maximum_amount:
                 raise MandateError("mandate budget exceeded")
 
-            self._spent[mandate.mandate_id] = spent + proposal.amount
+            self._spent[mandate_id] = spent + proposal.amount
             self._used_cart_hashes.add(cart.cart_hash())
             self._used_cart_nonces.add((cart.merchant, cart.nonce))
 
@@ -237,15 +244,13 @@ class MandateLedger:
             raise MandateError("unknown mandate")
         if mandate_id in self._revoked:
             raise MandateError("mandate revoked")
-        if mandate.expires_at <= datetime.now(timezone.utc):
+        if mandate.expires_at <= datetime.now(UTC):
             raise MandateError("mandate expired")
         if mandate.parent_mandate_id is not None:
             self._active(mandate.parent_mandate_id)
         return mandate
 
-    def _require_attenuation(
-        self, parent: IntentMandateV1, child: IntentMandateV1
-    ) -> None:
+    def _require_attenuation(self, parent: IntentMandateV1, child: IntentMandateV1) -> None:
         parent_id = parent.mandate_id
         assert parent_id is not None
         remaining = parent.maximum_amount - self._spent[parent_id]
@@ -267,4 +272,3 @@ class MandateLedger:
             return verify(public_key, payload, bytes.fromhex(signature))
         except ValueError:
             return False
-

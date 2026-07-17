@@ -1,0 +1,17 @@
+.git
+.github
+.hypothesis
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.venv
+artifacts
+contracts/broadcast
+contracts/cache
+contracts/out
+docs
+htmlcov
+node_modules
+signer/target
+tests
+web

@@ -1,4 +1,5 @@
 """Canonical identifiers and JSON used by signed authorization artifacts."""
+
 from __future__ import annotations
 
 import json
@@ -8,9 +9,9 @@ import uuid
 from typing import Any
 
 try:
-    import rfc8785
+    import rfc8785 as _rfc8785
 except ImportError:  # pragma: no cover - only used before dependencies are installed
-    rfc8785 = None
+    _rfc8785 = None  # type: ignore[assignment]
 
 
 class CanonicalizationError(ValueError):
@@ -46,15 +47,15 @@ def _assert_supported(value: Any, path: str = "$") -> None:
         for key, item in value.items():
             _assert_supported(item, f"{path}.{key}")
         return
-    raise CanonicalizationError(f"unsupported canonical JSON type at {path}: {type(value).__name__}")
+    value_type = type(value).__name__
+    raise CanonicalizationError(f"unsupported canonical JSON type at {path}: {value_type}")
 
 
 def canonical_json(value: Any) -> bytes:
     """Return RFC 8785 JSON bytes; signed domains deliberately forbid floats."""
     _assert_supported(value)
-    if rfc8785 is not None:
-        return rfc8785.dumps(value)
-    return json.dumps(
-        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
-
+    if _rfc8785 is not None:
+        return _rfc8785.dumps(value)
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
@@ -6,7 +6,6 @@ from pydantic import ValidationError
 from aegisledger.canonical import CanonicalizationError, canonical_json, uuid7
 from aegisledger.contracts import LifecycleState, ProposalV1, require_transition
 from aegisledger.policy import PolicyV1
-
 
 WALLET = "0x" + "12" * 20
 RECIPIENT = "0x" + "34" * 20
@@ -21,7 +20,7 @@ def proposal(**overrides):
         "asset": "TUSDC",
         "amount": 100,
         "intent": {"kind": "transfer", "recipient": RECIPIENT},
-        "deadline": datetime.now(timezone.utc) + timedelta(minutes=5),
+        "deadline": datetime.now(UTC) + timedelta(minutes=5),
         "idempotency_key": "experiment-0001",
     }
     data.update(overrides)
@@ -84,12 +83,14 @@ def test_policy_forbids_implicit_boolean_and_unknown_nested_fields():
     with pytest.raises(ValidationError):
         policy(emergency_stop="false")
     with pytest.raises(ValidationError):
-        policy(risk={
-            "maximum_slippage_bps": 50,
-            "maximum_quote_age_seconds": 30,
-            "deny_on_missing_quote": True,
-            "allow_when_unavailable": True,
-        })
+        policy(
+            risk={
+                "maximum_slippage_bps": 50,
+                "maximum_quote_age_seconds": 30,
+                "deny_on_missing_quote": True,
+                "allow_when_unavailable": True,
+            }
+        )
 
 
 def test_policy_requires_explicit_default_deny_constraints():

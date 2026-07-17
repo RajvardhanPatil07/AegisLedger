@@ -6,26 +6,27 @@ This is the component the model can never reach: agents submit *proposals*;
 the engine returns verdicts; only the guard pipeline can turn an approval into
 a signature.
 """
+
 from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 
+from ..payments.mandates import CartMandate, IntentMandate, MandateVerifier
 from .policy import Policy
-from ..payments.mandates import IntentMandate, CartMandate, MandateVerifier
 
 
 @dataclass
 class Proposal:
-    kind: str                    # "transfer" | "swap"
-    amount: int                  # micro-USDC (transfer) or amount_in (swap)
+    kind: str  # "transfer" | "swap"
+    amount: int  # micro-USDC (transfer) or amount_in (swap)
     asset: str = "TUSDC"
-    to: str = ""                 # transfer recipient
-    token_in: str = "TUSDC"      # swap fields
+    to: str = ""  # transfer recipient
+    token_in: str = "TUSDC"  # swap fields
     token_out: str = "DRB"
     min_out: int = 0
-    quoted_out: int = 0          # quote observed at decision time (for slippage check)
+    quoted_out: int = 0  # quote observed at decision time (for slippage check)
     purpose: str = ""
     meta: dict = field(default_factory=dict)
 
@@ -39,7 +40,8 @@ class Verdict:
     reasons: list[str] = field(default_factory=list)
 
     def __str__(self) -> str:
-        return ("ALLOW" if self.allow else "DENY") + (": " + "; ".join(self.reasons) if self.reasons else "")
+        verdict = "ALLOW" if self.allow else "DENY"
+        return verdict + (": " + "; ".join(self.reasons) if self.reasons else "")
 
 
 @dataclass
@@ -75,8 +77,7 @@ class PolicyEngine:
 
     # ---- history ----
     def record(self, p: Proposal) -> None:
-        self.history.append(SpendRecord(ts=self._now(), amount=p.amount,
-                                        asset=p.asset, to=p.to))
+        self.history.append(SpendRecord(ts=self._now(), amount=p.amount, asset=p.asset, to=p.to))
 
     def _spent_in_window(self, window_s: int) -> int:
         now = self._now()
@@ -90,7 +91,11 @@ class PolicyEngine:
         return sum(r.amount for r in self.history)
 
     # ---- evaluation ----
-    def evaluate(self, p: Proposal, mandate_chain: tuple[IntentMandate, CartMandate, dict] | None = None) -> Verdict:
+    def evaluate(
+        self,
+        p: Proposal,
+        mandate_chain: tuple[IntentMandate, CartMandate, dict] | None = None,
+    ) -> Verdict:
         try:
             self._validate(p)
         except MalformedProposal as e:
@@ -112,10 +117,13 @@ class PolicyEngine:
             spent = self._spent_in_window(wc.window_s)
             if spent + p.amount > wc.cap:
                 reasons.append(
-                    f"window cap exceeded: {spent}+{p.amount} > {wc.cap} over {wc.window_s}s")
+                    f"window cap exceeded: {spent}+{p.amount} > {wc.cap} over {wc.window_s}s"
+                )
 
-        if pol.max_tx_per_window and \
-                self._count_in_window(pol.velocity_window_s) + 1 > pol.max_tx_per_window:
+        if (
+            pol.max_tx_per_window
+            and self._count_in_window(pol.velocity_window_s) + 1 > pol.max_tx_per_window
+        ):
             reasons.append("velocity limit exceeded")
 
         if p.kind == "transfer":
@@ -132,10 +140,15 @@ class PolicyEngine:
             else:
                 intent, cart, pubs = mandate_chain
                 ok, why = self.mandate_verifier.check_payment_against_chain(
-                    intent, cart,
-                    user_pub=pubs["user"], merchant_pub=pubs["merchant"],
-                    agent=p.meta.get("agent", ""), merchant=p.to,
-                    amount=p.amount, already_spent=self.spent_under_intent())
+                    intent,
+                    cart,
+                    user_pub=pubs["user"],
+                    merchant_pub=pubs["merchant"],
+                    agent=p.meta.get("agent", ""),
+                    merchant=p.to,
+                    amount=p.amount,
+                    already_spent=self.spent_under_intent(),
+                )
                 if not ok:
                     reasons.append(f"mandate chain invalid: {why}")
 
@@ -145,12 +158,14 @@ class PolicyEngine:
             if self.pool_move_bps > pol.risk.pool_move_threshold_bps:
                 reasons.append(
                     f"pool moved {self.pool_move_bps}bps > threshold "
-                    f"{pol.risk.pool_move_threshold_bps}bps (possible sandwich)")
+                    f"{pol.risk.pool_move_threshold_bps}bps (possible sandwich)"
+                )
             if p.quoted_out and p.min_out:
                 slip_bps = (p.quoted_out - p.min_out) * 10_000 // max(p.quoted_out, 1)
                 if slip_bps > pol.risk.max_slippage_bps:
                     reasons.append(
                         f"slippage tolerance {slip_bps}bps > policy max "
-                        f"{pol.risk.max_slippage_bps}bps")
+                        f"{pol.risk.max_slippage_bps}bps"
+                    )
 
         return Verdict(allow=not reasons, reasons=reasons)

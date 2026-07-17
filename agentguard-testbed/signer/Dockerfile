@@ -1,4 +1,4 @@
-FROM rust:1.97.1-bookworm AS build
+FROM rust:1.97.1-bookworm@sha256:77fac8b98f9f46062bb680b6d25d5bcaabfc400143952ebc572e924bcbedc3fa AS build
 WORKDIR /build
 RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -7,7 +7,7 @@ COPY signer/proto ./proto
 COPY signer/src ./src
 RUN cargo build --locked --release
 
-FROM gcr.io/distroless/cc-debian12:nonroot
+FROM gcr.io/distroless/cc-debian12:nonroot@sha256:66aa873a4a14fb164aa01296058efd8253744606d72715e45acface073359faa
 ARG BUILD_MEASUREMENT=development-unmeasured
 ENV AEGIS_SIGNER_BUILD_MEASUREMENT=${BUILD_MEASUREMENT}
 COPY --from=build /build/target/release/aegisledger-signer /usr/local/bin/aegisledger-signer

@@ -1,15 +1,17 @@
 """OIDC authentication and centralized role vocabulary."""
+
 from __future__ import annotations
 
 import os
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
+import jwt
 from fastapi import Request
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class Role(str, Enum):
+class Role(StrEnum):
     VIEWER = "viewer"
     RESEARCHER = "researcher"
     POLICY_ADMIN = "policy_admin"
@@ -40,10 +42,10 @@ class OIDCAuthenticator:
         self.issuer = issuer.rstrip("/")
         self.audience = audience
         self.jwks_url = jwks_url
-        self._jwks_client = None
+        self._jwks_client: jwt.PyJWKClient | None = None
 
     @classmethod
-    def from_environment(cls) -> "OIDCAuthenticator":
+    def from_environment(cls) -> OIDCAuthenticator:
         required = {
             "issuer": os.getenv("AEGIS_OIDC_ISSUER"),
             "audience": os.getenv("AEGIS_OIDC_AUDIENCE"),
@@ -60,8 +62,6 @@ class OIDCAuthenticator:
         if scheme.lower() != "bearer" or not token:
             raise AuthenticationError("bearer token required")
         try:
-            import jwt
-
             if self._jwks_client is None:
                 self._jwks_client = jwt.PyJWKClient(self.jwks_url)
             signing_key = self._jwks_client.get_signing_key_from_jwt(token)
@@ -80,4 +80,3 @@ class OIDCAuthenticator:
         raw_roles.update(claims.get("realm_access", {}).get("roles", []))
         roles = frozenset(Role(role) for role in raw_roles if role in {item.value for item in Role})
         return Principal(subject=claims["sub"], roles=roles)
-

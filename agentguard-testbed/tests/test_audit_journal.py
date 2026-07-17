@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -14,7 +14,7 @@ from aegisledger.audit import (
 
 
 def populated_journal() -> AuditJournal:
-    journal = AuditJournal(now=lambda: datetime(2026, 1, 1, tzinfo=timezone.utc))
+    journal = AuditJournal(now=lambda: datetime(2026, 1, 1, tzinfo=UTC))
     for index in range(5):
         journal.append(
             event_type="PROPOSAL_STATE_CHANGED",
@@ -58,14 +58,14 @@ def test_verifier_detects_modification_deletion_insertion_reordering_and_truncat
 def test_verifier_rejects_wholly_replaced_history_against_trusted_checkpoint():
     original = populated_journal()
     checkpoint = original.checkpoint()
-    replacement = AuditJournal(now=lambda: datetime(2026, 1, 1, tzinfo=timezone.utc))
+    replacement = AuditJournal(now=lambda: datetime(2026, 1, 1, tzinfo=UTC))
     for index in range(5):
         replacement.append("FABRICATED", "compromised-host", {"index": index})
     assert not verify_journal(replacement.events, checkpoint).valid
 
 
 def test_anchor_due_after_100_events_or_five_minutes():
-    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    now = datetime(2026, 1, 1, tzinfo=UTC)
     journal = AuditJournal(now=lambda: now)
     for index in range(99):
         journal.append("TEST", "runner", {"index": index})
@@ -93,7 +93,7 @@ class FakeAnchor:
             transaction_hash="0x" + "cd" * 32,
             block_number=123,
             merkle_root=checkpoint.merkle_root,
-            anchored_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            anchored_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
 
 
@@ -105,7 +105,7 @@ def test_anchoring_service_retains_full_history_checkpoint_and_external_receipt(
         store,
         anchor,
         retention=timedelta(days=365),
-        now=lambda: datetime(2026, 1, 1, tzinfo=timezone.utc),
+        now=lambda: datetime(2026, 1, 1, tzinfo=UTC),
     ).anchor(journal)
 
     assert verify_anchored_journal(journal.events, result.checkpoint, result.receipt).valid
@@ -117,7 +117,7 @@ def test_anchoring_service_retains_full_history_checkpoint_and_external_receipt(
         store.put_once(
             result.history_key,
             b"replacement",
-            retain_until=datetime(2027, 1, 1, tzinfo=timezone.utc),
+            retain_until=datetime(2027, 1, 1, tzinfo=UTC),
         )
 
 

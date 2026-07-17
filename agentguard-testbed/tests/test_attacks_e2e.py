@@ -7,6 +7,7 @@ Expected outcomes (by design of the defenses):
   contract_wallet — per-tx caps bound but do not prevent under-cap theft
   class IV        — extraction positive publicly, zero via relay, cancelled by mev-aware guard
 """
+
 from agentwallet.attacks import (
     composed_injection,
     inbound_asset_permission,

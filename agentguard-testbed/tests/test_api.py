@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 
@@ -46,7 +46,7 @@ def proposal_document(principal="researcher"):
         "asset": "TUSDC",
         "amount": 100,
         "intent": {"kind": "transfer", "recipient": RECIPIENT},
-        "deadline": (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
+        "deadline": (datetime.now(UTC) + timedelta(minutes=5)).isoformat(),
         "idempotency_key": "api-proposal-001",
     }
 
@@ -80,6 +80,12 @@ def test_researcher_can_submit_proposal_and_receive_signed_decision():
     assert body["decision"]["proposal_hash"].startswith("0x")
 
 
+def test_health_checks_distinguish_process_liveness_and_service_readiness():
+    client, _ = client_for(Principal(subject="viewer", roles={Role.VIEWER}))
+    assert client.get("/health/live").json() == {"status": "ok"}
+    assert client.get("/health/ready").json() == {"status": "ready"}
+
+
 def test_researcher_cannot_submit_for_another_principal():
     client, _ = client_for(Principal(subject="researcher", roles={Role.RESEARCHER}))
     response = client.post("/api/v1/proposals", json=proposal_document("different-user"))
@@ -100,18 +106,14 @@ def test_policy_activation_api_enforces_two_distinct_approvals():
         state=MemoryStateStore(),
         decisions=DecisionIssuer.from_seed("policy-api-test"),
     )
-    admin_a, _ = client_for(
-        Principal(subject="admin-a", roles={Role.POLICY_ADMIN}), container
-    )
+    admin_a, _ = client_for(Principal(subject="admin-a", roles={Role.POLICY_ADMIN}), container)
     created = admin_a.post("/api/v1/policies", json=policy_document())
     assert created.status_code == 201
     version_id = created.json()["version_id"]
     assert admin_a.post(f"/api/v1/policies/{version_id}/approvals").status_code == 200
     assert admin_a.post(f"/api/v1/policies/{version_id}/activate").status_code == 409
 
-    admin_b, _ = client_for(
-        Principal(subject="admin-b", roles={Role.POLICY_ADMIN}), container
-    )
+    admin_b, _ = client_for(Principal(subject="admin-b", roles={Role.POLICY_ADMIN}), container)
     assert admin_b.post(f"/api/v1/policies/{version_id}/approvals").status_code == 200
     assert admin_a.post(f"/api/v1/policies/{version_id}/activate").status_code == 200
 

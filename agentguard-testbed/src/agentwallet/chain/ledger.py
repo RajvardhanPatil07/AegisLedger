@@ -9,13 +9,15 @@ experiment code.
 
 All money amounts are integers in micro-USDC (6 decimals). No floats anywhere.
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
@@ -37,7 +39,7 @@ class Tx:
     kind: TxKind
     sender: str
     # transfer fields
-    to: Optional[str] = None
+    to: str | None = None
     amount: int = 0
     asset: str = "TUSDC"
     # swap fields
@@ -46,8 +48,8 @@ class Tx:
     token_out: str = "DRB"
     min_out: int = 0  # slippage protection: minimum acceptable output
     # meta
-    private: bool = False          # private txs are invisible to mempool watchers
-    submitted_at: int = 0          # logical clock tick
+    private: bool = False  # private txs are invisible to mempool watchers
+    submitted_at: int = 0  # logical clock tick
     nonce: int = 0
     chain_id: int = 0
     deadline: int = 0
@@ -81,7 +83,7 @@ class Tx:
     def hash(self) -> str:
         return self.digest().hex()
 
-    def sign(self, keys: "KeyPair") -> "Tx":
+    def sign(self, keys: KeyPair) -> Tx:
         if keys.address.lower() != self.sender.lower():
             raise RuleViolation("signing key does not control transaction sender")
         self.public_key_hex = keys.public_key_bytes().hex()
@@ -103,6 +105,7 @@ class InsufficientFunds(Exception):
 
 class RuleViolation(Exception):
     """Raised when a contract-side (smart wallet) rule rejects a transfer."""
+
     pass
 
 
@@ -167,8 +170,9 @@ class LocalChain:
     on-chain enforcement that no host compromise can bypass.
     """
 
-    def __init__(self, amm_a: int = 1_000_000 * MICRO, amm_b: int = 500_000 * MICRO,
-                 chain_id: int = 31337):
+    def __init__(
+        self, amm_a: int = 1_000_000 * MICRO, amm_b: int = 500_000 * MICRO, chain_id: int = 31337
+    ):
         self.tokens: dict[str, TestToken] = {"TUSDC": TestToken("TUSDC"), "DRB": TestToken("DRB")}
         self.amm = ConstantProductAMM(amm_a, amm_b)
         # Fund the pool account to match the AMM's reserve accounting.
@@ -197,8 +201,7 @@ class LocalChain:
         if not tx.public_key_hex or not tx.signature_hex:
             raise RuleViolation("transaction signature required")
         if tx.chain_id != self.chain_id:
-            raise RuleViolation(
-                f"wrong chain: transaction {tx.chain_id}, backend {self.chain_id}")
+            raise RuleViolation(f"wrong chain: transaction {tx.chain_id}, backend {self.chain_id}")
         if tx.deadline < self.clock:
             raise RuleViolation("transaction expired")
         expected = self.next_nonce(tx.sender)

@@ -1,5 +1,5 @@
 import hashlib
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, utils
@@ -30,38 +30,42 @@ def raw_signature(key, digest):
 
 
 def make_attestation():
-    policy = PolicyV1.model_validate({
-        "schema_version": "aegisledger.policy.v1",
-        "name": "attestation-policy",
-        "default_action": "deny",
-        "enabled_wallets": [WALLET],
-        "enabled_principals": ["principal"],
-        "enabled_chains": [31337],
-        "enabled_assets": ["TUSDC"],
-        "allowed_recipients": [RECIPIENT],
-        "contract_rules": [],
-        "per_transaction_cap": 100,
-        "rolling_caps": [{"window_seconds": 3600, "amount": 100}],
-        "maximum_transactions_per_hour": 10,
-        "mandate_required_above": 100,
-        "risk": {
-            "maximum_slippage_bps": 50,
-            "maximum_quote_age_seconds": 30,
-            "deny_on_missing_quote": True,
-        },
-        "emergency_stop": False,
-    })
-    proposal = ProposalV1.model_validate({
-        "schema_version": "aegisledger.proposal.v1",
-        "principal_id": "principal",
-        "wallet": WALLET,
-        "chain_id": 31337,
-        "asset": "TUSDC",
-        "amount": 100,
-        "intent": {"kind": "transfer", "recipient": RECIPIENT},
-        "deadline": datetime.now(timezone.utc) + timedelta(minutes=5),
-        "idempotency_key": "complete-attestation-001",
-    })
+    policy = PolicyV1.model_validate(
+        {
+            "schema_version": "aegisledger.policy.v1",
+            "name": "attestation-policy",
+            "default_action": "deny",
+            "enabled_wallets": [WALLET],
+            "enabled_principals": ["principal"],
+            "enabled_chains": [31337],
+            "enabled_assets": ["TUSDC"],
+            "allowed_recipients": [RECIPIENT],
+            "contract_rules": [],
+            "per_transaction_cap": 100,
+            "rolling_caps": [{"window_seconds": 3600, "amount": 100}],
+            "maximum_transactions_per_hour": 10,
+            "mandate_required_above": 100,
+            "risk": {
+                "maximum_slippage_bps": 50,
+                "maximum_quote_age_seconds": 30,
+                "deny_on_missing_quote": True,
+            },
+            "emergency_stop": False,
+        }
+    )
+    proposal = ProposalV1.model_validate(
+        {
+            "schema_version": "aegisledger.proposal.v1",
+            "principal_id": "principal",
+            "wallet": WALLET,
+            "chain_id": 31337,
+            "asset": "TUSDC",
+            "amount": 100,
+            "intent": {"kind": "transfer", "recipient": RECIPIENT},
+            "deadline": datetime.now(UTC) + timedelta(minutes=5),
+            "idempotency_key": "complete-attestation-001",
+        }
+    )
     registry = PolicyRegistry()
     version = registry.create(policy, created_by="author")
     record = MemoryStateStore().reserve(proposal, policy).record
@@ -91,7 +95,7 @@ def make_attestation():
         serialization.PublicFormat.UncompressedPoint,
     )
     signer_identity = "0x" + keccak(public_bytes[1:])[-20:].hex()
-    issued_at = datetime.now(timezone.utc)
+    issued_at = datetime.now(UTC)
     unsigned_evidence = {
         "schema_version": "aegisledger.enclave_evidence.v1",
         "mode": "local-process-or-nitro",
@@ -113,17 +117,21 @@ def make_attestation():
         "expires_at": decision.expires_at.isoformat(),
         "issued_at": issued_at.isoformat(),
     }
-    placeholder = EnclaveEvidenceV1.model_validate({
-        **unsigned_evidence,
-        "evidence_hash": "0x" + "00" * 32,
-        "evidence_signature": "0x" + "00" * 65,
-    })
+    placeholder = EnclaveEvidenceV1.model_validate(
+        {
+            **unsigned_evidence,
+            "evidence_hash": "0x" + "00" * 32,
+            "evidence_signature": "0x" + "00" * 65,
+        }
+    )
     evidence_digest = hashlib.sha256(placeholder.unsigned_payload()).digest()
-    evidence = EnclaveEvidenceV1.model_validate({
-        **placeholder.model_dump(mode="python"),
-        "evidence_hash": "0x" + evidence_digest.hex(),
-        "evidence_signature": raw_signature(signing_key, evidence_digest),
-    })
+    evidence = EnclaveEvidenceV1.model_validate(
+        {
+            **placeholder.model_dump(mode="python"),
+            "evidence_hash": "0x" + evidence_digest.hex(),
+            "evidence_signature": raw_signature(signing_key, evidence_digest),
+        }
+    )
     signed = SignedTransactionV1(
         schema_version="aegisledger.signed_transaction.v1",
         eip712_hash="0x" + "cd" * 32,
@@ -144,7 +152,7 @@ def make_attestation():
         chain_id=31337,
         success=True,
         confirmations=2,
-        observed_at=datetime.now(timezone.utc),
+        observed_at=datetime.now(UTC),
     )
     complete = CompleteAttestationV1(
         schema_version="aegisledger.complete_attestation.v1",
@@ -175,9 +183,7 @@ def test_attestation_rejects_mutated_evidence_even_when_embedded_copy_is_changed
     signed = complete.signed_transaction.model_copy(
         update={"enclave_evidence": changed.model_dump(mode="json")}
     )
-    forged = complete.model_copy(
-        update={"enclave_evidence": changed, "signed_transaction": signed}
-    )
+    forged = complete.model_copy(update={"enclave_evidence": changed, "signed_transaction": signed})
     report = verify_complete_attestation(
         forged,
         issuer.public_key,
@@ -190,11 +196,13 @@ def test_attestation_rejects_mutated_evidence_even_when_embedded_copy_is_changed
 def test_attestation_rejects_transaction_signature_and_unapproved_build():
     issuer, complete = make_attestation()
     forged_signature = "0x" + "00" * 65
-    forged = complete.model_copy(update={
-        "signed_transaction": complete.signed_transaction.model_copy(
-            update={"signature": forged_signature}
-        )
-    })
+    forged = complete.model_copy(
+        update={
+            "signed_transaction": complete.signed_transaction.model_copy(
+                update={"signature": forged_signature}
+            )
+        }
+    )
     report = verify_complete_attestation(
         forged,
         issuer.public_key,

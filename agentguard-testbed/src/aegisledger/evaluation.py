@@ -1,4 +1,5 @@
 """Reproducible experiment manifests, raw logs, statistics, and CLI execution."""
+
 from __future__ import annotations
 
 import argparse
@@ -10,11 +11,10 @@ import platform
 import shutil
 import statistics
 import subprocess
-import sys
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -46,7 +46,7 @@ class ExperimentSpecV1(StrictModel):
 
     schema_version: Literal["aegisledger.experiment.v1"]
     experiment_id: uuid.UUID = Field(default_factory=uuid7)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     commit_sha: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{40}$")]
     configuration_hash: Annotated[str, StringConstraints(pattern=r"^0x[0-9a-f]{64}$")]
     seed: Annotated[str, StringConstraints(min_length=1, max_length=128)]
@@ -66,7 +66,7 @@ class ExperimentSpecV1(StrictModel):
     def require_utc(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("created_at must include a UTC offset")
-        return value.astimezone(timezone.utc)
+        return value.astimezone(UTC)
 
     @field_validator("scenarios", mode="before")
     @classmethod
@@ -124,9 +124,7 @@ def wilson_interval(
     center = (proportion + z * z / (2 * trials)) / denominator
     margin = (
         z
-        * math.sqrt(
-            proportion * (1 - proportion) / trials + z * z / (4 * trials * trials)
-        )
+        * math.sqrt(proportion * (1 - proportion) / trials + z * z / (4 * trials * trials))
         / denominator
     )
     return max(0.0, center - margin), min(1.0, center + margin)
@@ -154,30 +152,34 @@ class ExperimentRunner:
         attack_metrics: list[dict[str, object]] = []
         for result in attack_results:
             for index, outcome in enumerate(result.outcomes):
-                raw_runs.append({
-                    "schema_version": "aegisledger.raw_run.v1",
-                    "experiment_id": str(spec.experiment_id),
-                    "attack": result.name,
-                    "defense": result.defense,
-                    "run_index": index,
-                    "run_seed": f"{spec.seed}:{result.name}:{result.defense}:{index}",
-                    "attempted": outcome.attempted,
-                    "succeeded": outcome.succeeded,
-                    "detected": outcome.detected,
-                    "loss_base_units": outcome.loss_micro,
-                    "attacker_gain_base_units": outcome.attacker_gain_micro,
-                    "notes": outcome.notes,
-                })
+                raw_runs.append(
+                    {
+                        "schema_version": "aegisledger.raw_run.v1",
+                        "experiment_id": str(spec.experiment_id),
+                        "attack": result.name,
+                        "defense": result.defense,
+                        "run_index": index,
+                        "run_seed": f"{spec.seed}:{result.name}:{result.defense}:{index}",
+                        "attempted": outcome.attempted,
+                        "succeeded": outcome.succeeded,
+                        "detected": outcome.detected,
+                        "loss_base_units": outcome.loss_micro,
+                        "attacker_gain_base_units": outcome.attacker_gain_micro,
+                        "notes": outcome.notes,
+                    }
+                )
             successes = sum(outcome.succeeded for outcome in result.outcomes)
             detected = sum(outcome.detected for outcome in result.outcomes)
             success_low, success_high = wilson_interval(successes, len(result.outcomes))
             detection_low, detection_high = wilson_interval(detected, len(result.outcomes))
-            attack_metrics.append({
-                **result.row(),
-                "success_rate_ci95": [round(success_low, 4), round(success_high, 4)],
-                "detection_rate_ci95": [round(detection_low, 4), round(detection_high, 4)],
-                "total_loss_base_units": result.total_loss_micro,
-            })
+            attack_metrics.append(
+                {
+                    **result.row(),
+                    "success_rate_ci95": [round(success_low, 4), round(success_high, 4)],
+                    "detection_rate_ci95": [round(detection_low, 4), round(detection_high, 4)],
+                    "total_loss_base_units": result.total_loss_micro,
+                }
+            )
 
         attempted = sum(int(row["attempted"]) for row in utility_rows)
         completed = sum(int(row["completed"]) for row in utility_rows)
@@ -279,4 +281,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

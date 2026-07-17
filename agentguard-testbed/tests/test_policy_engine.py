@@ -1,8 +1,9 @@
 """Unit tests for the policy language and PolicyEngine semantics."""
+
 import pytest
 
-from agentwallet.guard.policy import load_policy, PolicyError
 from agentwallet.guard.engine import PolicyEngine, Proposal
+from agentwallet.guard.policy import PolicyError, load_policy
 
 BASE = """name: t
 per_tx_cap: 100
@@ -64,9 +65,18 @@ class TestParsing:
     @pytest.mark.parametrize(
         "text",
         [
-            "name: strict\nper_tx_cap: 100\nrisk: {dynamic_tightening: false, hidden_allow: true}\n",
-            "name: strict\nper_tx_cap: 100\nvelocity: {max_tx_per_window: 2, window_s: 60, hidden_allow: true}\n",
-            "name: strict\nper_tx_cap: 100\nwindow_caps: [{window_s: 60, cap: 100, hidden_allow: true}]\n",
+            (
+                "name: strict\nper_tx_cap: 100\n"
+                "risk: {dynamic_tightening: false, hidden_allow: true}\n"
+            ),
+            (
+                "name: strict\nper_tx_cap: 100\nvelocity: "
+                "{max_tx_per_window: 2, window_s: 60, hidden_allow: true}\n"
+            ),
+            (
+                "name: strict\nper_tx_cap: 100\nwindow_caps: "
+                "[{window_s: 60, cap: 100, hidden_allow: true}]\n"
+            ),
         ],
     )
     def test_unknown_nested_policy_fields_are_rejected(self, text):
@@ -75,9 +85,7 @@ class TestParsing:
 
     def test_zero_length_cap_window_is_rejected(self):
         with pytest.raises(PolicyError, match="window_s must be > 0"):
-            load_policy(
-                "name: strict\nper_tx_cap: 100\nwindow_caps: [{window_s: 0, cap: 100}]\n"
-            )
+            load_policy("name: strict\nper_tx_cap: 100\nwindow_caps: [{window_s: 0, cap: 100}]\n")
 
 
 class TestCaps:

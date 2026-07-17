@@ -8,6 +8,7 @@ Strategy (classic sandwich):
 
 Extracted value is measured exactly from ledger state, not estimated.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -43,7 +44,13 @@ class SearcherBot:
                 if front_amt <= 0 or chain.balance("TUSDC", self.address) < front_amt:
                     return None, None
                 self.log.append(f"sandwich planned vs {tx.sender}: front {front_amt}")
-                front = Tx(kind=TxKind.SWAP, sender=self.address, amount_in=front_amt,
-                           token_in="TUSDC", token_out="DRB", min_out=0)
+                front = Tx(
+                    kind=TxKind.SWAP,
+                    sender=self.address,
+                    amount_in=front_amt,
+                    token_in="TUSDC",
+                    token_out="DRB",
+                    min_out=0,
+                )
                 return self.authorize(chain, front), tx
         return None, None

@@ -8,9 +8,10 @@ Replicates the May-2026 Grok/Bankrbot chain:
      because privileges were "unlocked".
 No smart-contract bug, no stolen key: a pure authorization-semantics failure.
 """
+
 from __future__ import annotations
 
-from ..testbed import Testbed, DefenseMode
+from ..testbed import DefenseMode, Testbed
 from ..tools.adversarial import morse_encode
 from .base import AttackResult, RunOutcome
 

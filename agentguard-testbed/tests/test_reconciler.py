@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from aegisledger.chain import EvmReceipt
 from aegisledger.contracts import LifecycleState, ProposalV1
@@ -12,41 +12,45 @@ TX_HASH = "0x" + "ab" * 32
 
 
 def policy():
-    return PolicyV1.model_validate({
-        "schema_version": "aegisledger.policy.v1",
-        "name": "reconciliation-policy",
-        "default_action": "deny",
-        "enabled_wallets": [WALLET],
-        "enabled_principals": ["principal"],
-        "enabled_chains": [31337],
-        "enabled_assets": ["TUSDC"],
-        "allowed_recipients": [RECIPIENT],
-        "contract_rules": [],
-        "per_transaction_cap": 100,
-        "rolling_caps": [{"window_seconds": 3600, "amount": 100}],
-        "maximum_transactions_per_hour": 10,
-        "mandate_required_above": 100,
-        "risk": {
-            "maximum_slippage_bps": 50,
-            "maximum_quote_age_seconds": 30,
-            "deny_on_missing_quote": True,
-        },
-        "emergency_stop": False,
-    })
+    return PolicyV1.model_validate(
+        {
+            "schema_version": "aegisledger.policy.v1",
+            "name": "reconciliation-policy",
+            "default_action": "deny",
+            "enabled_wallets": [WALLET],
+            "enabled_principals": ["principal"],
+            "enabled_chains": [31337],
+            "enabled_assets": ["TUSDC"],
+            "allowed_recipients": [RECIPIENT],
+            "contract_rules": [],
+            "per_transaction_cap": 100,
+            "rolling_caps": [{"window_seconds": 3600, "amount": 100}],
+            "maximum_transactions_per_hour": 10,
+            "mandate_required_above": 100,
+            "risk": {
+                "maximum_slippage_bps": 50,
+                "maximum_quote_age_seconds": 30,
+                "deny_on_missing_quote": True,
+            },
+            "emergency_stop": False,
+        }
+    )
 
 
 def proposal():
-    return ProposalV1.model_validate({
-        "schema_version": "aegisledger.proposal.v1",
-        "principal_id": "principal",
-        "wallet": WALLET,
-        "chain_id": 31337,
-        "asset": "TUSDC",
-        "amount": 100,
-        "intent": {"kind": "transfer", "recipient": RECIPIENT},
-        "deadline": datetime.now(timezone.utc) + timedelta(minutes=5),
-        "idempotency_key": "reconciliation-001",
-    })
+    return ProposalV1.model_validate(
+        {
+            "schema_version": "aegisledger.proposal.v1",
+            "principal_id": "principal",
+            "wallet": WALLET,
+            "chain_id": 31337,
+            "asset": "TUSDC",
+            "amount": 100,
+            "intent": {"kind": "transfer", "recipient": RECIPIENT},
+            "deadline": datetime.now(UTC) + timedelta(minutes=5),
+            "idempotency_key": "reconciliation-001",
+        }
+    )
 
 
 class FakeBackend:

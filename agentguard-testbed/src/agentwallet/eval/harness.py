@@ -1,6 +1,7 @@
 """Evaluation harness: runs the attack matrix and the task-utility suite,
 aggregates metrics, and writes docs/RESULTS.md + docs/results.json.
 """
+
 from __future__ import annotations
 
 import json
@@ -99,14 +100,16 @@ def run_utility_matrix(*, seed: str = "task") -> list[dict]:
     rows = []
     for mode in [DefenseMode.UNDEFENDED, DefenseMode.GUARD_STRICT, DefenseMode.GUARD_MEV]:
         for outcome in run_task_suite(mode, seed=f"{seed}:{mode.value}"):
-            rows.append({
-                "mode": mode.value,
-                "task": outcome.task,
-                "utility": round(outcome.utility, 3),
-                "completed": outcome.completed,
-                "attempted": outcome.attempted,
-                "spent_usdc": round(outcome.spent_micro / 1_000_000, 2),
-            })
+            rows.append(
+                {
+                    "mode": mode.value,
+                    "task": outcome.task,
+                    "utility": round(outcome.utility, 3),
+                    "completed": outcome.completed,
+                    "attempted": outcome.attempted,
+                    "spent_usdc": round(outcome.spent_micro / 1_000_000, 2),
+                }
+            )
     return rows
 
 
@@ -119,8 +122,9 @@ def _md_table(rows: list[dict], cols: list[str]) -> str:
 
 def write_results(attack_rows: list[dict], utility_rows: list[dict], outdir: Path) -> None:
     outdir.mkdir(parents=True, exist_ok=True)
-    (outdir / "results.json").write_text(json.dumps(
-        {"attacks": attack_rows, "utility": utility_rows}, indent=2))
+    (outdir / "results.json").write_text(
+        json.dumps({"attacks": attack_rows, "utility": utility_rows}, indent=2)
+    )
 
     lines = [
         "# Evaluation Results — AgentGuard Testbed",
@@ -132,13 +136,16 @@ def write_results(attack_rows: list[dict], utility_rows: list[dict], outdir: Pat
         "",
         "## Attack effectiveness vs. defense configuration",
         "",
-        _md_table(attack_rows, ["attack", "defense", "runs", "success_rate",
-                                "avg_loss_usdc", "detection_rate"]),
+        _md_table(
+            attack_rows,
+            ["attack", "defense", "runs", "success_rate", "avg_loss_usdc", "detection_rate"],
+        ),
         "",
         "## Task utility under defense (fraction of legitimate operations completed)",
         "",
-        _md_table(utility_rows, ["mode", "task", "utility", "completed",
-                                 "attempted", "spent_usdc"]),
+        _md_table(
+            utility_rows, ["mode", "task", "utility", "completed", "attempted", "spent_usdc"]
+        ),
         "",
         "## Notes",
         "",

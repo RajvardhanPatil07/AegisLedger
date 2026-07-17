@@ -21,6 +21,7 @@ Schema (all amounts integer micro-USDC):
 Unknown keys, negative amounts, or malformed values raise PolicyError at load
 time (fail-closed: a broken policy never silently becomes permissive).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -69,9 +70,16 @@ class Policy:
 
 
 _ALLOWED_KEYS = {
-    "name", "per_tx_cap", "window_caps", "velocity", "allowed_assets",
-    "allowlist_recipients", "blocklist_recipients", "require_mandate_above",
-    "risk", "kill_switch",
+    "name",
+    "per_tx_cap",
+    "window_caps",
+    "velocity",
+    "allowed_assets",
+    "allowlist_recipients",
+    "blocklist_recipients",
+    "require_mandate_above",
+    "risk",
+    "kill_switch",
 }
 
 
@@ -131,12 +139,12 @@ def load_policy(text: str) -> Policy:
         if not isinstance(wc, dict):
             raise PolicyError(f"window_caps[{i}] must be a mapping")
         _reject_unknown(wc, {"window_s", "cap"}, f"window_caps[{i}]")
-        window_caps.append(WindowCap(
-            window_s=_need_positive_int(
-                wc.get("window_s", 0), f"window_caps[{i}].window_s"
-            ),
-            cap=_need_int(wc.get("cap", 0), f"window_caps[{i}].cap"),
-        ))
+        window_caps.append(
+            WindowCap(
+                window_s=_need_positive_int(wc.get("window_s", 0), f"window_caps[{i}].window_s"),
+                cap=_need_int(wc.get("cap", 0), f"window_caps[{i}].cap"),
+            )
+        )
 
     vel = data.get("velocity", {}) or {}
     if not isinstance(vel, dict):
@@ -157,10 +165,10 @@ def load_policy(text: str) -> Policy:
         dynamic_tightening=_need_bool(
             risk_d.get("dynamic_tightening", False), "risk.dynamic_tightening"
         ),
-        pool_move_threshold_bps=_need_int(risk_d.get("pool_move_threshold_bps", 100),
-                                          "risk.pool_move_threshold_bps"),
-        max_slippage_bps=_need_int(risk_d.get("max_slippage_bps", 100),
-                                   "risk.max_slippage_bps"),
+        pool_move_threshold_bps=_need_int(
+            risk_d.get("pool_move_threshold_bps", 100), "risk.pool_move_threshold_bps"
+        ),
+        max_slippage_bps=_need_int(risk_d.get("max_slippage_bps", 100), "risk.max_slippage_bps"),
     )
 
     return Policy(
@@ -170,12 +178,15 @@ def load_policy(text: str) -> Policy:
         max_tx_per_window=max_tx,
         velocity_window_s=vel_win,
         allowed_assets=_need_str_list(data.get("allowed_assets", ["TUSDC"]), "allowed_assets"),
-        allowlist_recipients=_need_str_list(data.get("allowlist_recipients", []),
-                                            "allowlist_recipients"),
-        blocklist_recipients=_need_str_list(data.get("blocklist_recipients", []),
-                                            "blocklist_recipients"),
-        require_mandate_above=_need_int(data.get("require_mandate_above", 2**63 - 1),
-                                        "require_mandate_above"),
+        allowlist_recipients=_need_str_list(
+            data.get("allowlist_recipients", []), "allowlist_recipients"
+        ),
+        blocklist_recipients=_need_str_list(
+            data.get("blocklist_recipients", []), "blocklist_recipients"
+        ),
+        require_mandate_above=_need_int(
+            data.get("require_mandate_above", 2**63 - 1), "require_mandate_above"
+        ),
         risk=risk,
         kill_switch=_need_bool(data.get("kill_switch", False), "kill_switch"),
         raw=data,

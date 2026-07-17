@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -12,41 +12,45 @@ RECIPIENT = "0x" + "34" * 20
 
 
 def make_policy(cap=100):
-    return PolicyV1.model_validate({
-        "schema_version": "aegisledger.policy.v1",
-        "name": "atomic-spend-policy",
-        "default_action": "deny",
-        "enabled_wallets": [WALLET],
-        "enabled_principals": ["principal"],
-        "enabled_chains": [31337],
-        "enabled_assets": ["TUSDC"],
-        "allowed_recipients": [RECIPIENT],
-        "contract_rules": [],
-        "per_transaction_cap": cap,
-        "rolling_caps": [{"window_seconds": 3600, "amount": cap}],
-        "maximum_transactions_per_hour": 10,
-        "mandate_required_above": cap,
-        "risk": {
-            "maximum_slippage_bps": 50,
-            "maximum_quote_age_seconds": 30,
-            "deny_on_missing_quote": True,
-        },
-        "emergency_stop": False,
-    })
+    return PolicyV1.model_validate(
+        {
+            "schema_version": "aegisledger.policy.v1",
+            "name": "atomic-spend-policy",
+            "default_action": "deny",
+            "enabled_wallets": [WALLET],
+            "enabled_principals": ["principal"],
+            "enabled_chains": [31337],
+            "enabled_assets": ["TUSDC"],
+            "allowed_recipients": [RECIPIENT],
+            "contract_rules": [],
+            "per_transaction_cap": cap,
+            "rolling_caps": [{"window_seconds": 3600, "amount": cap}],
+            "maximum_transactions_per_hour": 10,
+            "mandate_required_above": cap,
+            "risk": {
+                "maximum_slippage_bps": 50,
+                "maximum_quote_age_seconds": 30,
+                "deny_on_missing_quote": True,
+            },
+            "emergency_stop": False,
+        }
+    )
 
 
 def make_proposal(key: str, amount=60):
-    return ProposalV1.model_validate({
-        "schema_version": "aegisledger.proposal.v1",
-        "principal_id": "principal",
-        "wallet": WALLET,
-        "chain_id": 31337,
-        "asset": "TUSDC",
-        "amount": amount,
-        "intent": {"kind": "transfer", "recipient": RECIPIENT},
-        "deadline": datetime.now(timezone.utc) + timedelta(minutes=5),
-        "idempotency_key": key,
-    })
+    return ProposalV1.model_validate(
+        {
+            "schema_version": "aegisledger.proposal.v1",
+            "principal_id": "principal",
+            "wallet": WALLET,
+            "chain_id": 31337,
+            "asset": "TUSDC",
+            "amount": amount,
+            "intent": {"kind": "transfer", "recipient": RECIPIENT},
+            "deadline": datetime.now(UTC) + timedelta(minutes=5),
+            "idempotency_key": key,
+        }
+    )
 
 
 def test_concurrent_reservations_cannot_exceed_rolling_cap():

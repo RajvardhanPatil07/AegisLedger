@@ -1,14 +1,23 @@
 """Restart-safe settlement reconciliation with finality and pre-finality reorg handling."""
+
 from __future__ import annotations
 
 import threading
 import uuid
 from dataclasses import dataclass
+from typing import Protocol
 
 import httpx
 
+from .chain import EvmReceipt
 from .contracts import LifecycleState
-from .state import MemoryStateStore
+from .state import StateStore
+
+
+class ReceiptBackend(Protocol):
+    chain_id: int
+
+    def receipt(self, transaction_hash: str) -> EvmReceipt | None: ...
 
 
 @dataclass
@@ -69,9 +78,9 @@ class MemorySettlementStore:
 class SettlementReconciler:
     def __init__(
         self,
-        lifecycle: MemoryStateStore,
+        lifecycle: StateStore,
         settlements: MemorySettlementStore,
-        backends: dict[int, object],
+        backends: dict[int, ReceiptBackend],
         *,
         finality: int,
     ) -> None:
@@ -112,4 +121,3 @@ class SettlementReconciler:
             if record.state is LifecycleState.SUBMITTED:
                 self._lifecycle.transition(tracked.proposal_id, target)
             self._settlements.complete(tracked.transaction_hash, target.value)
-

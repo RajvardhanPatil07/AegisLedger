@@ -1,9 +1,10 @@
 """Reference authorization checks enforced again inside the isolated signer."""
+
 from __future__ import annotations
 
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -57,7 +58,7 @@ class TransactionBindingV1(StrictModel):
         return value.lower() if value is not None else None
 
     @model_validator(mode="after")
-    def validate_operation_shape(self) -> "TransactionBindingV1":
+    def validate_operation_shape(self) -> TransactionBindingV1:
         if self.operation == "transfer":
             if self.recipient is None or self.contract is not None or self.selector is not None:
                 raise ValueError("transfer binding requires only a recipient")
@@ -92,7 +93,7 @@ class TransactionSignRequestV1(StrictModel):
     def normalize_expiry(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("expires_at must include a UTC offset")
-        return value.astimezone(timezone.utc)
+        return value.astimezone(UTC)
 
 
 class SignerAuthorizationError(PermissionError):
@@ -125,7 +126,7 @@ class SignerAuthorizationGate:
         *,
         now: datetime | None = None,
     ) -> None:
-        current_time = now or datetime.now(timezone.utc)
+        current_time = now or datetime.now(UTC)
         with self._lock:
             self._validate(request, current_time)
             self._used_decisions.add(request.decision.decision_nonce)
@@ -145,7 +146,10 @@ class SignerAuthorizationGate:
             raise SignerAuthorizationError("decision signer identity mismatch")
         if decision.verdict is not DecisionVerdict.ALLOW:
             raise SignerAuthorizationError("decision does not authorize signing")
-        if self._allowed_policy_hashes is not None and decision.policy_hash.lower() not in self._allowed_policy_hashes:
+        if (
+            self._allowed_policy_hashes is not None
+            and decision.policy_hash.lower() not in self._allowed_policy_hashes
+        ):
             raise SignerAuthorizationError("policy version is not approved by signer")
         if proposal.proposal_hash() != decision.proposal_hash:
             raise SignerAuthorizationError("proposal hash does not match decision")
@@ -195,4 +199,3 @@ class SignerAuthorizationGate:
                 raise SignerAuthorizationError("transaction selector does not match proposal")
             if transaction.calldata != proposal.intent.calldata:
                 raise SignerAuthorizationError("transaction calldata does not match proposal")
-

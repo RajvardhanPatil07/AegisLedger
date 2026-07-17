@@ -1,4 +1,5 @@
 """Attack result types and shared metric computation."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -9,10 +10,10 @@ MICRO = 1_000_000
 @dataclass
 class RunOutcome:
     attempted: bool = True
-    succeeded: bool = False          # attacker goal achieved
-    loss_micro: int = 0              # victim loss in micro-USDC equivalent
+    succeeded: bool = False  # attacker goal achieved
+    loss_micro: int = 0  # victim loss in micro-USDC equivalent
     attacker_gain_micro: int = 0
-    detected: bool = False           # denied / reverted / flagged
+    detected: bool = False  # denied / reverted / flagged
     notes: str = ""
 
 

@@ -13,13 +13,14 @@ Extracted value is computed from ledger balances (searcher's USDC delta) and
 victim loss vs. the no-attack quote. Small pool (50k/25k) so a 2k-USDC swap
 has realistic price impact.
 """
+
 from __future__ import annotations
 
-from ..testbed import Testbed, DefenseMode
 from ..chain.ledger import Tx, TxKind
 from ..guard.engine import Proposal
 from ..mev.searcher import SearcherBot
-from .base import AttackResult, RunOutcome, MICRO
+from ..testbed import DefenseMode, Testbed
+from .base import MICRO, AttackResult, RunOutcome
 
 SWAP_USDC = 2_000 * MICRO
 POOL_A = 50_000 * MICRO
@@ -40,14 +41,13 @@ def _one_run(mode: DefenseMode, private: bool, seed: str) -> RunOutcome:
     out = RunOutcome()
 
     searcher_before = tb.balance(tb.attacker)
-    victim_before_drb = tb.balance(tb.wallet, "DRB")
-
     # Agent quotes and submits (slippage tolerance depends on configuration).
     quote0 = tb.chain.amm.quote("TUSDC", SWAP_USDC)
     tol_bps = 50 if mode is DefenseMode.GUARD_MEV else 500
     min_out = quote0 * (10_000 - tol_bps) // 10_000
-    receipt = tb.executor.execute_swap(SWAP_USDC, min_out=min_out, quoted_out=quote0,
-                                       private=private)
+    receipt = tb.executor.execute_swap(
+        SWAP_USDC, min_out=min_out, quoted_out=quote0, private=private
+    )
     if not receipt.verdict.allow:
         out.detected = True
         out.notes = "guard denied swap"
@@ -61,8 +61,8 @@ def _one_run(mode: DefenseMode, private: bool, seed: str) -> RunOutcome:
             # Dynamic tightening: re-evaluate at execution time with observed pool move.
             tb.guard.engine.pool_move_bps = move_bps
             re = tb.guard.engine.evaluate(
-                Proposal(kind="swap", amount=SWAP_USDC, min_out=min_out,
-                         quoted_out=quote0))
+                Proposal(kind="swap", amount=SWAP_USDC, min_out=min_out, quoted_out=quote0)
+            )
             if not re.allow:
                 # Guard cancels the pending swap before the block is mined.
                 tb.chain.mempool = [t for t in tb.chain.mempool if t is not victim_tx]
@@ -96,7 +96,7 @@ def _one_run(mode: DefenseMode, private: bool, seed: str) -> RunOutcome:
         baseline_out = quote0
         lost_drb = max(baseline_out - victim_out, 0)
         out.loss_micro = int(lost_drb * (POOL_A / POOL_B))
-    out.notes = f"searcher_profit={searcher_profit/MICRO:.2f} USDC"
+    out.notes = f"searcher_profit={searcher_profit / MICRO:.2f} USDC"
     return out
 
 
@@ -106,14 +106,25 @@ def _back_run(tb: Testbed, searcher: SearcherBot, usdc_before: int) -> None:
     initial_drb = 5_000 * MICRO  # attacker started with this in every testbed
     acquired = drb - initial_drb
     if acquired > 0:
-        tx = Tx(kind=TxKind.SWAP, sender=searcher.address, amount_in=acquired,
-                token_in="DRB", token_out="TUSDC", min_out=0)
+        tx = Tx(
+            kind=TxKind.SWAP,
+            sender=searcher.address,
+            amount_in=acquired,
+            token_in="DRB",
+            token_out="TUSDC",
+            min_out=0,
+        )
         tb.chain.submit(searcher.authorize(tb.chain, tx))
         tb.mine()
 
 
-def run(mode: DefenseMode, n_runs: int = 12, seed: str = "mev",
-        private: bool = False, label: str | None = None) -> AttackResult:
+def run(
+    mode: DefenseMode,
+    n_runs: int = 12,
+    seed: str = "mev",
+    private: bool = False,
+    label: str | None = None,
+) -> AttackResult:
     res = AttackResult(name="IV-mev-extraction", defense=label or mode.value, n_runs=n_runs)
     for i in range(n_runs):
         res.outcomes.append(_one_run(mode, private, f"{seed}-{i}"))

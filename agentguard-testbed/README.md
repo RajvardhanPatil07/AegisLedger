@@ -26,11 +26,20 @@ rebalancing) — the defense blocks attacks without breaking legitimate flows.
 ## Quick start
 
 ```bash
-pip install pyyaml pytest cryptography
 cd agentguard-testbed
-python3 -m pytest tests/ -q          # 67 tests: unit + E2E + security
-python3 scripts/run_evaluation.py    # full matrix -> docs/RESULTS.md
+make bootstrap
+make up
 ```
+
+Open the OIDC-gated research console at `http://localhost:4173`. The API is on
+`http://localhost:8000`; Keycloak, Prometheus, and Grafana remain loopback-only
+on ports 8080, 9090, and 3000. `make bootstrap` creates ignored local
+credentials and development certificates—no checked-in default secrets are
+used. See [the operations runbook](docs/OPERATIONS.md) for port overrides,
+backup verification, alert response, and rollback.
+
+Run all language and formal verification gates with `make verify`, or execute a
+reproducible evaluation with `make evaluate`.
 
 ## Architecture
 
@@ -85,8 +94,10 @@ src/agentwallet/
   tasks/       financial task suite (utility measurement)
   eval/        matrix harness -> docs/RESULTS.md + results.json
 configs/policies/    strict.yaml, mev-aware.yaml
-tests/               67 tests: unit, E2E attack assertions, security/tamper
+tests/               unit, integration, property, adversarial, and security checks
 docs/                RESULTS.md, THREAT_MODEL.md, SECURITY.md
+web/                 React/Vite policy, lifecycle, experiment, and evidence console
+deploy/              Keycloak, PostgreSQL, OTel, Prometheus, and Grafana configuration
 ```
 
 ## Honest limitations (read before citing)

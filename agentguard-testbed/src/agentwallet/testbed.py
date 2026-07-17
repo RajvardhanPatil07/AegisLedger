@@ -9,6 +9,7 @@ Defense modes:
   GUARD_MEV       — strict policy + dynamic tightening + private-relay routing.
   CONTRACT_WALLET — on-chain rules only (no off-chain guard; host may be compromised).
 """
+
 from __future__ import annotations
 
 import itertools
@@ -112,11 +113,17 @@ class Testbed:
         if self.mode is DefenseMode.CONTRACT_WALLET:
             policy = load_policy(UNRESTRICTED)
         elif self.mode is DefenseMode.GUARD_MEV:
-            policy = load_policy(MEV_AWARE_POLICY.replace("allowlist_recipients: []",
-                                                          f"allowlist_recipients: {vendor_list}"))
+            policy = load_policy(
+                MEV_AWARE_POLICY.replace(
+                    "allowlist_recipients: []", f"allowlist_recipients: {vendor_list}"
+                )
+            )
         elif self.mode in (DefenseMode.GUARD_STRICT, DefenseMode.GUARD_FULL):
-            policy = load_policy(STRICT_POLICY.replace("allowlist_recipients: []",
-                                                       f"allowlist_recipients: {vendor_list}"))
+            policy = load_policy(
+                STRICT_POLICY.replace(
+                    "allowlist_recipients: []", f"allowlist_recipients: {vendor_list}"
+                )
+            )
         else:
             policy = load_policy(UNRESTRICTED)
 
@@ -131,13 +138,13 @@ class Testbed:
 
         # --- contract wallet on-chain rules (second custody configuration) ---
         if self.mode is DefenseMode.CONTRACT_WALLET:
-            rules = ContractWalletRules(per_tx_cap=200 * MICRO,
-                                        allowlist=[], allowed_assets=["TUSDC"])
+            rules = ContractWalletRules(
+                per_tx_cap=200 * MICRO, allowlist=[], allowed_assets=["TUSDC"]
+            )
             deploy_contract_wallet(self.chain, self.wallet, rules)
 
         # --- agents ---
-        san = Sanitizer(enabled=self.mode in (DefenseMode.MODEL_LEVEL,
-                                              DefenseMode.GUARD_FULL))
+        san = Sanitizer(enabled=self.mode in (DefenseMode.MODEL_LEVEL, DefenseMode.GUARD_FULL))
         self.language = LanguageAgent(sanitizer=san, attacker_address=self.attacker)
         self.executor = ExecutorAgent(name="executor", client=self.client)
         self.tool_sandbox = ToolSandbox(

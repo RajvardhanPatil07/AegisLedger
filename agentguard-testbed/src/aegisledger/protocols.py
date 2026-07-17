@@ -1,8 +1,9 @@
 """Versioned payment protocol adapters sharing the proposal authorization path."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from pydantic import Field, StringConstraints, field_validator
@@ -32,8 +33,8 @@ class X402PaymentRequestV1(StrictModel):
     def normalize_expiry(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("expires_at must include a UTC offset")
-        normalized = value.astimezone(timezone.utc)
-        if normalized <= datetime.now(timezone.utc):
+        normalized = value.astimezone(UTC)
+        if normalized <= datetime.now(UTC):
             raise ValueError("payment request is expired")
         return normalized
 
@@ -49,18 +50,20 @@ class X402Adapter:
         principal_id: str,
         wallet: str,
     ) -> ProposalV1:
-        proposal = ProposalV1.model_validate({
-            "schema_version": "aegisledger.proposal.v1",
-            "principal_id": principal_id,
-            "wallet": wallet,
-            "chain_id": request.chain_id,
-            "asset": request.asset,
-            "amount": request.amount,
-            "intent": {"kind": "transfer", "recipient": request.pay_to},
-            "deadline": request.expires_at,
-            "idempotency_key": f"x402:{request.nonce}",
-            "quote_reference": request.resource,
-        })
+        proposal = ProposalV1.model_validate(
+            {
+                "schema_version": "aegisledger.proposal.v1",
+                "principal_id": principal_id,
+                "wallet": wallet,
+                "chain_id": request.chain_id,
+                "asset": request.asset,
+                "amount": request.amount,
+                "intent": {"kind": "transfer", "recipient": request.pay_to},
+                "deadline": request.expires_at,
+                "idempotency_key": f"x402:{request.nonce}",
+                "quote_reference": request.resource,
+            }
+        )
         self._submit_proposal(proposal)
         return proposal
 

@@ -1,14 +1,14 @@
 """Versioned proposal, policy, attestation, experiment, and audit APIs."""
+
 from __future__ import annotations
 
 import inspect
 import os
 import threading
 import uuid
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Union
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -21,9 +21,9 @@ from .auth import AuthenticationError, OIDCAuthenticator, Principal, Role
 from .contracts import DecisionTokenV1, LifecycleState, ProposalV1
 from .decisions import DecisionIssuer, verify_decision_token
 from .evaluation import ExperimentRunner, Scenario, create_experiment_spec
-from .policies import PolicyRegistry, PolicyStatus, PolicyVersion
+from .policies import PolicyStatus, PolicyStore, PolicyVersion
 from .policy import PolicyV1
-from .state import MemoryStateStore, ProposalRecord
+from .state import ProposalRecord, StateStore
 
 
 class ApiError(Exception):
@@ -116,20 +116,18 @@ class ExperimentResponse(BaseModel):
     error: str | None = None
 
 
-Authenticator = Callable[[Request], Union[Principal, Awaitable[Principal]]]
+Authenticator = Callable[[Request], Principal | Awaitable[Principal]]
 
 
 @dataclass
 class ServiceContainer:
-    policies: PolicyRegistry
-    state: MemoryStateStore
+    policies: PolicyStore
+    state: StateStore
     decisions: DecisionIssuer
     audit: AuditJournal = field(default_factory=AuditJournal)
     issued_decisions: dict[uuid.UUID, DecisionTokenV1] = field(default_factory=dict)
     experiments: dict[uuid.UUID, ExperimentResponse] = field(default_factory=dict)
-    allowed_build_measurements: set[str] = field(
-        default_factory=lambda: {"development-unmeasured"}
-    )
+    allowed_build_measurements: set[str] = field(default_factory=lambda: {"development-unmeasured"})
     experiment_runner: ExperimentRunner = field(default_factory=ExperimentRunner)
     experiment_output_root: Path = field(default_factory=lambda: Path("artifacts/experiments"))
     commit_sha: str = field(default_factory=lambda: os.getenv("AEGISLEDGER_COMMIT_SHA", "0" * 40))
@@ -196,16 +194,20 @@ class ServiceContainer:
             ).model_copy(update={"experiment_id": experiment_id})
             output = self.experiment_output_root / str(experiment_id)
             artifacts = self.experiment_runner.run(spec, output)
-            result = queued.model_copy(update={
-                "status": "COMPLETED",
-                "result_uri": str(output / "summary.json"),
-                "summary": artifacts.summary,
-            })
+            result = queued.model_copy(
+                update={
+                    "status": "COMPLETED",
+                    "result_uri": str(output / "summary.json"),
+                    "summary": artifacts.summary,
+                }
+            )
         except Exception as exc:
-            result = queued.model_copy(update={
-                "status": "FAILED",
-                "error": type(exc).__name__,
-            })
+            result = queued.model_copy(
+                update={
+                    "status": "FAILED",
+                    "error": type(exc).__name__,
+                }
+            )
         with self._experiment_lock:
             self.experiments[experiment_id] = result
 
@@ -305,6 +307,21 @@ def create_app(
     @app.get("/health/live", include_in_schema=False)
     async def liveness():
         return {"status": "ok"}
+
+    @app.get("/health/ready", include_in_schema=False)
+    async def readiness():
+        try:
+            services.state.healthcheck()
+            services.policies.active()
+        except Exception as exc:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "not_ready",
+                    "reason": type(exc).__name__,
+                },
+            )
+        return {"status": "ready"}
 
     @app.post("/api/v1/proposals", response_model=SubmissionResponse, status_code=202)
     async def submit_proposal(

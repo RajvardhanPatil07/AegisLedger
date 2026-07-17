@@ -45,9 +45,7 @@ def test_guard_tool_sandbox_closes_exfiltration_in_evaluation(tmp_path):
     )
     artifacts = ExperimentRunner().run(spec, tmp_path / "experiment")
     strict = next(
-        row
-        for row in artifacts.summary["attack_metrics"]
-        if row["defense"] == "guard_strict"
+        row for row in artifacts.summary["attack_metrics"] if row["defense"] == "guard_strict"
     )
     assert strict["success_rate"] == 0.0
     assert strict["detection_rate"] == 1.0

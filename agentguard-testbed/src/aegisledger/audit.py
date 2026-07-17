@@ -1,4 +1,5 @@
 """Append-only hash journal, Merkle checkpoints, and trust-independent verification."""
+
 from __future__ import annotations
 
 import hashlib
@@ -6,10 +7,11 @@ import os
 import re
 import threading
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Annotated, Callable, Protocol
+from typing import Annotated, Any, Protocol
 
 from pydantic import Field, StringConstraints, field_validator
 
@@ -36,7 +38,7 @@ class AuditEventV1(StrictModel):
     def require_timezone(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("occurred_at must include a UTC offset")
-        return value.astimezone(timezone.utc)
+        return value.astimezone(UTC)
 
 
 class AuditCheckpointV1(StrictModel):
@@ -70,7 +72,7 @@ class AnchorReceiptV1(StrictModel):
     def normalize_anchor_time(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("anchored_at must include a UTC offset")
-        return value.astimezone(timezone.utc)
+        return value.astimezone(UTC)
 
 
 @dataclass(frozen=True)
@@ -130,7 +132,7 @@ def _merkle_root(events: tuple[AuditEventV1, ...] | list[AuditEventV1]) -> str:
 
 class AuditJournal:
     def __init__(self, *, now: Callable[[], datetime] | None = None) -> None:
-        self._now = now or (lambda: datetime.now(timezone.utc))
+        self._now = now or (lambda: datetime.now(UTC))
         self._events: list[AuditEventV1] = []
         self._last_anchor_count = 0
         self._last_anchor_at = self._now()
@@ -161,10 +163,12 @@ class AuditJournal:
                 previous_hash=previous,
                 event_hash=GENESIS_HASH,
             )
-            event = AuditEventV1.model_validate({
-                **placeholder.model_dump(mode="python"),
-                "event_hash": _hash_payload(_event_payload(placeholder)),
-            })
+            event = AuditEventV1.model_validate(
+                {
+                    **placeholder.model_dump(mode="python"),
+                    "event_hash": _hash_payload(_event_payload(placeholder)),
+                }
+            )
             self._events.append(event)
             return event
 
@@ -172,8 +176,7 @@ class AuditJournal:
         with self._lock:
             unanchored = len(self._events) - self._last_anchor_count
             return unanchored >= 100 or (
-                unanchored > 0
-                and self._now() - self._last_anchor_at >= timedelta(minutes=5)
+                unanchored > 0 and self._now() - self._last_anchor_at >= timedelta(minutes=5)
             )
 
     def checkpoint(self) -> AuditCheckpointV1:
@@ -223,7 +226,7 @@ class MemoryRetentionStore:
                 raise FileExistsError(f"retained object already exists: {key}")
             self._objects[key] = RetainedObject(
                 payload=bytes(payload),
-                retain_until=retain_until.astimezone(timezone.utc),
+                retain_until=retain_until.astimezone(UTC),
                 digest=_hash_payload(payload),
             )
 
@@ -249,12 +252,14 @@ class FilesystemRetentionStore:
         _require_retention(retain_until)
         path = self._path(key)
         path.parent.mkdir(parents=True, exist_ok=True)
-        envelope = canonical_json({
-            "schema_version": "aegisledger.retained_object.v1",
-            "retain_until": retain_until.astimezone(timezone.utc).isoformat(),
-            "payload_sha256": _hash_payload(payload),
-            "payload_hex": payload.hex(),
-        })
+        envelope = canonical_json(
+            {
+                "schema_version": "aegisledger.retained_object.v1",
+                "retain_until": retain_until.astimezone(UTC).isoformat(),
+                "payload_sha256": _hash_payload(payload),
+                "payload_hex": payload.hex(),
+            }
+        )
         descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
         try:
             os.write(descriptor, envelope)
@@ -283,7 +288,7 @@ class FilesystemRetentionStore:
 class S3ObjectLockStore:
     """AWS S3 Object Lock adapter using compliance-mode retention."""
 
-    def __init__(self, client: object, *, bucket: str, prefix: str = "audit/") -> None:
+    def __init__(self, client: Any, *, bucket: str, prefix: str = "audit/") -> None:
         self._client = client
         self._bucket = bucket
         self._prefix = prefix
@@ -305,13 +310,13 @@ class S3ObjectLockStore:
             Key=object_key,
             Body=payload,
             ObjectLockMode="COMPLIANCE",
-            ObjectLockRetainUntilDate=retain_until.astimezone(timezone.utc),
+            ObjectLockRetainUntilDate=retain_until.astimezone(UTC),
             Metadata={"sha256": _hash_payload(payload)},
         )
 
     def read(self, key: str) -> bytes:
         response = self._client.get_object(Bucket=self._bucket, Key=self._prefix + key)
-        payload = response["Body"].read()
+        payload = bytes(response["Body"].read())
         digest = response.get("Metadata", {}).get("sha256")
         if digest is not None and digest != _hash_payload(payload):
             raise ValueError("retained object digest mismatch")
@@ -332,7 +337,7 @@ class AnchoringService:
         self._store = store
         self._anchor = anchor
         self._retention = retention
-        self._now = now or (lambda: datetime.now(timezone.utc))
+        self._now = now or (lambda: datetime.now(UTC))
 
     def anchor(self, journal: AuditJournal) -> AnchoredCheckpoint:
         checkpoint = journal.snapshot_checkpoint()

@@ -1,9 +1,10 @@
 """Benign MCP-style tool servers."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ..payments.x402 import ResourceServer, PaymentRequirements
+from ..payments.x402 import PaymentRequirements, ResourceServer
 
 
 @dataclass
@@ -21,6 +22,7 @@ class PriceOracleTool:
 @dataclass
 class DataAPITool:
     """x402-gated data API: first response is 402; after payment, delivers data."""
+
     name: str = "data-api"
     description: str = "Premium market data. Pay per call."
     server: ResourceServer = None
@@ -38,18 +40,25 @@ class MerchantTool:
     name: str = "merchant"
     description: str = "Creates carts and accepts mandate-bound payments."
     address: str = "0xmerchant"
-    catalog: dict = field(default_factory=lambda: {
-        "api-credits-100": 25_000_000,        # 25 USDC
-        "dataset-q3": 120_000_000,            # 120 USDC
-        "premium-feed-monthly": 60_000_000,   # 60 USDC
-    })
+    catalog: dict = field(
+        default_factory=lambda: {
+            "api-credits-100": 25_000_000,  # 25 USDC
+            "dataset-q3": 120_000_000,  # 120 USDC
+            "premium-feed-monthly": 60_000_000,  # 60 USDC
+        }
+    )
 
     def price_of(self, item: str) -> int:
         return self.catalog[item]
 
-    def create_cart(self, items: list[str], intent_hash: str, merchant_keys,
-                    expires_at: int):
+    def create_cart(self, items: list[str], intent_hash: str, merchant_keys, expires_at: int):
         from ..payments.mandates import CartMandate
+
         total = sum(self.price_of(i) for i in items)
-        return CartMandate(merchant=self.address, intent_hash=intent_hash,
-                           items=items, total=total, expires_at=expires_at).sign(merchant_keys)
+        return CartMandate(
+            merchant=self.address,
+            intent_hash=intent_hash,
+            items=items,
+            total=total,
+            expires_at=expires_at,
+        ).sign(merchant_keys)

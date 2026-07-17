@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from hypothesis import given, settings
@@ -52,17 +52,19 @@ class AuthorizationStateMachine(RuleBasedStateMachine):
     @rule(amount=st.integers(min_value=1, max_value=400))
     def propose(self, amount):
         self.counter += 1
-        proposal = ProposalV1.model_validate({
-            "schema_version": "aegisledger.proposal.v1",
-            "principal_id": "principal",
-            "wallet": WALLET,
-            "chain_id": 31337,
-            "asset": "TUSDC",
-            "amount": amount,
-            "intent": {"kind": "transfer", "recipient": RECIPIENT},
-            "deadline": datetime.now(timezone.utc) + timedelta(hours=1),
-            "idempotency_key": f"state-machine-{self.counter:05d}",
-        })
+        proposal = ProposalV1.model_validate(
+            {
+                "schema_version": "aegisledger.proposal.v1",
+                "principal_id": "principal",
+                "wallet": WALLET,
+                "chain_id": 31337,
+                "asset": "TUSDC",
+                "amount": amount,
+                "intent": {"kind": "transfer", "recipient": RECIPIENT},
+                "deadline": datetime.now(UTC) + timedelta(hours=1),
+                "idempotency_key": f"state-machine-{self.counter:05d}",
+            }
+        )
         record = self.store.reserve(proposal, self.policy).record
         if record.state is LifecycleState.RESERVED:
             self.pending.append(record.proposal.proposal_id)
@@ -90,9 +92,7 @@ class AuthorizationStateMachine(RuleBasedStateMachine):
 
     @invariant()
     def pending_plus_settled_never_exceeds_cap(self):
-        pending, settled = self.store.budget_totals(
-            "principal", WALLET, 31337, "TUSDC"
-        )
+        pending, settled = self.store.budget_totals("principal", WALLET, 31337, "TUSDC")
         assert pending + settled <= CAP
 
 

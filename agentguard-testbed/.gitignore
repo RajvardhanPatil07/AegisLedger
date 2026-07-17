@@ -21,3 +21,5 @@ htmlcov/
 node_modules/
 signer/target/
 web/dist/
+web/playwright-report/
+web/test-results/

@@ -1,0 +1,59 @@
+name: Runtime smoke
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "43 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: agentguard-testbed
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.29"
+          python-version: "3.13"
+          enable-cache: true
+          working-directory: agentguard-testbed
+      - run: uv sync --all-extras --frozen
+      - run: uv run python scripts/bootstrap_dev.py
+      - run: docker compose --env-file .env.local config --quiet
+      - run: docker compose --env-file .env.local up --build --detach
+      - name: Wait for healthy services
+        run: |
+          timeout 240 sh -c 'until curl -fsS http://127.0.0.1:8000/health/ready; do sleep 3; done'
+          timeout 240 sh -c 'until curl -fsS http://127.0.0.1:9000/health/ready; do sleep 3; done'
+          timeout 240 sh -c 'until curl -fsS http://127.0.0.1:4173/ | grep -q "AegisLedger Console"; do sleep 3; done'
+          oidc_login_page=$(curl -fsS --get \
+            --data-urlencode 'client_id=aegisledger-console' \
+            --data-urlencode 'redirect_uri=http://localhost:4173/auth/callback' \
+            --data-urlencode 'response_type=code' \
+            --data-urlencode 'scope=openid' \
+            --data-urlencode 'code_challenge=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
+            --data-urlencode 'code_challenge_method=S256' \
+            http://127.0.0.1:8080/realms/aegisledger/protocol/openid-connect/auth)
+          grep -q 'AegisLedger Local Research' <<<"$oidc_login_page"
+          curl -fsS http://127.0.0.1:9090/-/ready
+          curl -fsS http://127.0.0.1:3000/api/health
+          curl -fsS -H 'content-type: application/json' \
+            --data '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' \
+            http://127.0.0.1:8545 | grep -q '"result":"0x7a69"'
+      - name: Preserve failure logs
+        if: failure()
+        run: docker compose --env-file .env.local logs --no-color --tail=300
+      - name: Tear down ephemeral runtime
+        if: always()
+        run: docker compose --env-file .env.local down --volumes

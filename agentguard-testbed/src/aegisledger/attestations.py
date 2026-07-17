@@ -1,10 +1,11 @@
 """Complete, offline-verifiable authorization and settlement attestations."""
+
 from __future__ import annotations
 
 import hashlib
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from cryptography.exceptions import InvalidSignature
@@ -62,7 +63,11 @@ class EnclaveEvidenceV1(StrictModel):
     )
     @classmethod
     def parse_uuid(cls, value: object) -> uuid.UUID:
-        return uuid.UUID(value) if isinstance(value, str) else value
+        if isinstance(value, uuid.UUID):
+            return value
+        if isinstance(value, str):
+            return uuid.UUID(value)
+        raise TypeError("identifier must be a UUID string")
 
     @field_validator("signer_identity", "wallet")
     @classmethod
@@ -72,16 +77,18 @@ class EnclaveEvidenceV1(StrictModel):
     @field_validator("expires_at", "issued_at", mode="before")
     @classmethod
     def parse_datetime(cls, value: object) -> datetime:
+        if isinstance(value, datetime):
+            return value
         if isinstance(value, str):
             return datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return value
+        raise TypeError("timestamp must be an ISO 8601 string")
 
     @field_validator("expires_at", "issued_at")
     @classmethod
     def normalize_time(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("evidence timestamps must include a UTC offset")
-        return value.astimezone(timezone.utc)
+        return value.astimezone(UTC)
 
     def unsigned_payload(self) -> bytes:
         return canonical_json(
@@ -107,7 +114,7 @@ class SettlementEvidenceV1(StrictModel):
     def normalize_time(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("observed_at must include a UTC offset")
-        return value.astimezone(timezone.utc)
+        return value.astimezone(UTC)
 
 
 class CompleteAttestationV1(StrictModel):
@@ -203,12 +210,15 @@ def verify_complete_attestation(
         errors.append("enclave evidence hash mismatch")
     public_key = _public_key(evidence.secp256k1_public_key, errors)
     if public_key is not None:
-        identity = "0x" + keccak(
-            public_key.public_bytes(
-                serialization.Encoding.X962,
-                serialization.PublicFormat.UncompressedPoint,
-            )[1:]
-        )[-20:].hex()
+        identity = (
+            "0x"
+            + keccak(
+                public_key.public_bytes(
+                    serialization.Encoding.X962,
+                    serialization.PublicFormat.UncompressedPoint,
+                )[1:]
+            )[-20:].hex()
+        )
         if identity != evidence.signer_identity:
             errors.append("secp256k1 public key does not match signer identity")
         _verify_raw_signature(
@@ -226,9 +236,7 @@ def verify_complete_attestation(
             errors,
         )
 
-    if canonical_json(signed.enclave_evidence) != canonical_json(
-        evidence.model_dump(mode="json")
-    ):
+    if canonical_json(signed.enclave_evidence) != canonical_json(evidence.model_dump(mode="json")):
         errors.append("signed transaction carries different enclave evidence")
 
     settlement = attestation.settlement

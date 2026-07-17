@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Deploy the smart account to Anvil and prove direct-RPC enforcement."""
+
 from __future__ import annotations
 
 import json
+import shutil
 import socket
 import subprocess
 import sys
@@ -15,13 +17,15 @@ ATTACKER_KEY = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b7869
 
 
 def run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        args,
+    executable = shutil.which(args[0])
+    if executable is None:
+        raise RuntimeError(f"required executable is unavailable: {args[0]}")
+    return subprocess.run(  # noqa: S603 - commands and arguments are locally constructed
+        (executable, *args[1:]),
         cwd=ROOT,
         check=check,
         text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
     )
 
 
@@ -53,8 +57,11 @@ def deploy(contract: str, rpc_url: str, *constructor_args: str) -> str:
 def main() -> int:
     port = free_port()
     rpc_url = f"http://127.0.0.1:{port}"
-    anvil = subprocess.Popen(
-        ["anvil", "--silent", "--port", str(port), "--chain-id", "31337"],
+    anvil_executable = shutil.which("anvil")
+    if anvil_executable is None:
+        raise RuntimeError("Anvil is required for the integration test")
+    anvil = subprocess.Popen(  # noqa: S603 - fixed local integration-test command
+        [anvil_executable, "--silent", "--port", str(port), "--chain-id", "31337"],
         cwd=ROOT,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
@@ -81,7 +88,13 @@ def main() -> int:
         )
         token = deploy("contracts/test/AegisSmartAccount.t.sol:MockToken", rpc_url)
 
-        def send(target: str, signature: str, *values: str, key: str = OWNER_KEY, check: bool = True):
+        def send(
+            target: str,
+            signature: str,
+            *values: str,
+            key: str = OWNER_KEY,
+            check: bool = True,
+        ):
             return run(
                 "cast",
                 "send",
@@ -151,13 +164,18 @@ def main() -> int:
         ).stdout.strip()
         if int(balance) != 100:
             raise AssertionError(f"unexpected recipient balance: {balance}")
-        print(json.dumps({
-            "chain_id": 31337,
-            "account": account,
-            "attacker": attacker,
-            "direct_bypass_rejected": True,
-            "authorized_relay_settled": True,
-        }, sort_keys=True))
+        print(
+            json.dumps(
+                {
+                    "chain_id": 31337,
+                    "account": account,
+                    "attacker": attacker,
+                    "direct_bypass_rejected": True,
+                    "authorized_relay_settled": True,
+                },
+                sort_keys=True,
+            )
+        )
         return 0
     finally:
         anvil.terminate()

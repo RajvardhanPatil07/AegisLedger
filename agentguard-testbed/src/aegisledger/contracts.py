@@ -1,11 +1,12 @@
 """Strict, versioned contracts shared by the gateway, policy service, and signer."""
+
 from __future__ import annotations
 
 import hashlib
 import uuid
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Annotated, Literal, Union
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Annotated, Literal
 
 from pydantic import (
     BaseModel,
@@ -58,7 +59,7 @@ class SwapIntentV1(StrictModel):
         return value.lower()
 
 
-IntentV1 = Annotated[Union[TransferIntentV1, SwapIntentV1], Field(discriminator="kind")]
+IntentV1 = Annotated[TransferIntentV1 | SwapIntentV1, Field(discriminator="kind")]
 
 
 class ProposalV1(StrictModel):
@@ -99,11 +100,11 @@ class ProposalV1(StrictModel):
     def require_utc(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("deadline must include a UTC offset")
-        return value.astimezone(timezone.utc)
+        return value.astimezone(UTC)
 
     @model_validator(mode="after")
     def deadline_must_be_future(self) -> ProposalV1:
-        if self.deadline <= datetime.now(timezone.utc):
+        if self.deadline <= datetime.now(UTC):
             raise ValueError("deadline must be in the future")
         return self
 
@@ -115,7 +116,7 @@ class ProposalV1(StrictModel):
         return "0x" + hashlib.sha256(self.canonical_payload()).hexdigest()
 
 
-class DecisionVerdict(str, Enum):
+class DecisionVerdict(StrEnum):
     ALLOW = "ALLOW"
     DENY = "DENY"
 
@@ -147,7 +148,7 @@ class DecisionTokenV1(StrictModel):
     def normalize_expiry(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("expires_at must include a UTC offset")
-        return value.astimezone(timezone.utc)
+        return value.astimezone(UTC)
 
     @model_validator(mode="after")
     def reservation_matches_verdict(self) -> DecisionTokenV1:
@@ -172,7 +173,7 @@ class SignedTransactionV1(StrictModel):
     signature: Annotated[str, StringConstraints(pattern=r"^0x[0-9a-f]{130}$")]
 
 
-class LifecycleState(str, Enum):
+class LifecycleState(StrEnum):
     PROPOSED = "PROPOSED"
     RESERVED = "RESERVED"
     SIGNED = "SIGNED"

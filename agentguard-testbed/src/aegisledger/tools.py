@@ -1,11 +1,12 @@
 """Versioned MCP adapters with definition pinning and argument-level DLP."""
+
 from __future__ import annotations
 
 import math
 import re
-from collections.abc import Mapping
-from enum import Enum
-from typing import Annotated, Callable, Literal, Protocol
+from collections.abc import Callable, Mapping
+from enum import StrEnum
+from typing import Annotated, Literal, Protocol, cast
 
 from pydantic import StringConstraints, field_validator
 
@@ -13,7 +14,7 @@ from .canonical import canonical_json
 from .contracts import StrictModel
 
 
-class Provenance(str, Enum):
+class Provenance(StrEnum):
     TRUSTED_LOCAL = "TRUSTED_LOCAL"
     VERIFIED_REMOTE = "VERIFIED_REMOTE"
     UNTRUSTED_REMOTE = "UNTRUSTED_REMOTE"
@@ -78,9 +79,7 @@ class InProcessMcpServer:
 
     def __init__(
         self,
-        tools: Mapping[
-            str, tuple[McpToolDefinitionV1, Callable[..., object]]
-        ],
+        tools: Mapping[str, tuple[McpToolDefinitionV1, Callable[..., object]]],
     ) -> None:
         self._tools = dict(tools)
 
@@ -152,7 +151,9 @@ class ToolSandbox:
         schema = definition.input_schema
         properties = schema["properties"]
         assert isinstance(properties, dict)
-        required = set(schema.get("required", []))
+        required_value = schema.get("required", [])
+        assert isinstance(required_value, list)
+        required = set(cast(list[str], required_value))
         supplied = set(arguments)
         missing = required - supplied
         if missing:
@@ -171,7 +172,7 @@ class ToolSandbox:
 
     @staticmethod
     def _require_json_type(key: str, value: object, expected: object) -> None:
-        expected_types = {
+        expected_types: dict[str, type[object] | tuple[type[object], ...]] = {
             "string": str,
             "integer": int,
             "number": (int, float),
@@ -179,6 +180,8 @@ class ToolSandbox:
             "array": list,
             "object": dict,
         }
+        if not isinstance(expected, str):
+            raise ToolCallDenied(f"unsupported schema type for argument {key}")
         python_type = expected_types.get(expected)
         if python_type is None:
             raise ToolCallDenied(f"unsupported schema type for argument {key}")
@@ -207,7 +210,6 @@ class ToolSandbox:
             return False
         counts = {character: compact.count(character) for character in set(compact)}
         entropy = -sum(
-            (count / len(compact)) * math.log2(count / len(compact))
-            for count in counts.values()
+            (count / len(compact)) * math.log2(count / len(compact)) for count in counts.values()
         )
         return entropy >= 4.5

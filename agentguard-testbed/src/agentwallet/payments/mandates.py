@@ -7,14 +7,15 @@ replays the chain: signature validity, hash linkage, and constraint compliance.
 
 The guard uses this to answer: "is *this* payment inside the user's grant?"
 """
+
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-from ..chain.crypto import KeyPair, verify, sha256_hex
+from ..chain.crypto import KeyPair, sha256_hex, verify
 from .x402 import canonical
 
 
@@ -22,8 +23,8 @@ from .x402 import canonical
 class IntentMandate:
     user: str
     agent: str
-    max_total: int                 # micro-USDC cumulative cap for this grant
-    allowed_merchants: list[str]   # empty = any
+    max_total: int  # micro-USDC cumulative cap for this grant
+    allowed_merchants: list[str]  # empty = any
     expires_at: int
     nonce: str
     signature_hex: str = ""
@@ -33,7 +34,7 @@ class IntentMandate:
         d.pop("signature_hex")
         return canonical(d)
 
-    def sign(self, keys: KeyPair) -> "IntentMandate":
+    def sign(self, keys: KeyPair) -> IntentMandate:
         self.signature_hex = keys.sign(self.digest()).hex()
         return self
 
@@ -58,7 +59,7 @@ class CartMandate:
         d.pop("signature_hex")
         return canonical(d)
 
-    def sign(self, keys: KeyPair) -> "CartMandate":
+    def sign(self, keys: KeyPair) -> CartMandate:
         self.signature_hex = keys.sign(self.digest()).hex()
         return self
 

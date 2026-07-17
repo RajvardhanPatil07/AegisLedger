@@ -1,4 +1,5 @@
 """Provider-neutral model adapters constrained to the proposal-only boundary."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence

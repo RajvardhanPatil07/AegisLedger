@@ -9,16 +9,17 @@ the previous entry's hash, so post-hoc log tampering is detectable.
 The guard is the *only* path to the signer. Agents hold a GuardClient handle
 that exposes `submit` and nothing else.
 """
+
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from .engine import PolicyEngine, Proposal, Verdict
-from .attestation import EnclaveAttestor, Attestation
-from ..wallet.signer import IsolatedSigner
 from ..chain.crypto import sha256_hex
 from ..chain.ledger import LocalChain, Tx, TxKind
+from ..wallet.signer import IsolatedSigner
+from .attestation import Attestation, EnclaveAttestor
+from .engine import PolicyEngine, Proposal, Verdict
 
 
 @dataclass
@@ -31,9 +32,14 @@ class AuditEntry:
     settled: bool
 
     def hash(self) -> str:
-        d = {"seq": self.seq, "prev_hash": self.prev_hash, "proposal": self.proposal,
-             "verdict": self.verdict, "attestation_sig": self.attestation_sig,
-             "settled": self.settled}
+        d = {
+            "seq": self.seq,
+            "prev_hash": self.prev_hash,
+            "proposal": self.proposal,
+            "verdict": self.verdict,
+            "attestation_sig": self.attestation_sig,
+            "settled": self.settled,
+        }
         return sha256_hex(json.dumps(d, sort_keys=True, separators=(",", ":")).encode())
 
 
@@ -46,11 +52,16 @@ class GuardReceipt:
 
 
 class AgentGuard:
-    def __init__(self, engine: PolicyEngine, attestor: EnclaveAttestor,
-                 signer: IsolatedSigner, chain: LocalChain | None = None):
+    def __init__(
+        self,
+        engine: PolicyEngine,
+        attestor: EnclaveAttestor,
+        signer: IsolatedSigner,
+        chain: LocalChain | None = None,
+    ):
         self.engine = engine
         self.attestor = attestor
-        self._signer = signer      # private: not exposed via client handle
+        self._signer = signer  # private: not exposed via client handle
         self.chain = chain
         self.audit: list[AuditEntry] = []
         self._audit_head = "GENESIS"
@@ -81,8 +92,9 @@ class AgentGuard:
     # ---------- main entry ----------
     def _decide(self, p: Proposal, mandate_chain=None) -> tuple[Verdict, Attestation]:
         verdict = self.engine.evaluate(p, mandate_chain=mandate_chain)
-        att = self.attestor.attest(self.policy_hash, p.canonical(),
-                                   verdict_str(verdict), verdict.reasons)
+        att = self.attestor.attest(
+            self.policy_hash, p.canonical(), verdict_str(verdict), verdict.reasons
+        )
         return verdict, att
 
     def submit(self, p: Proposal, mandate_chain=None, settle: bool = True) -> GuardReceipt:
@@ -106,11 +118,16 @@ class AgentGuard:
             "decision_hash": decision_hash,
         }
         if p.kind == "transfer":
-            tx = Tx(kind=TxKind.TRANSFER, to=p.to, amount=p.amount,
-                    asset=p.asset, **common)
+            tx = Tx(kind=TxKind.TRANSFER, to=p.to, amount=p.amount, asset=p.asset, **common)
         else:
-            tx = Tx(kind=TxKind.SWAP, amount_in=p.amount, token_in=p.token_in,
-                    token_out=p.token_out, min_out=p.min_out, **common)
+            tx = Tx(
+                kind=TxKind.SWAP,
+                amount_in=p.amount,
+                token_in=p.token_in,
+                token_out=p.token_out,
+                min_out=p.min_out,
+                **common,
+            )
         return self._signer.authorize_transaction(tx)
 
     def reconcile(self, receipts) -> None:
@@ -131,9 +148,14 @@ class AgentGuard:
         """x402 client signing callback: the requirements become a proposal and
         must pass policy before any signature exists. Settlement is performed
         by the Facilitator (it owns settlement), never duplicated here."""
-        p = Proposal(kind="transfer", amount=req.amount, asset=req.asset,
-                     to=req.pay_to, purpose=f"x402:{req.resource}",
-                     meta={"agent": "x402-client", "nonce": req.nonce})
+        p = Proposal(
+            kind="transfer",
+            amount=req.amount,
+            asset=req.asset,
+            to=req.pay_to,
+            purpose=f"x402:{req.resource}",
+            meta={"agent": "x402-client", "nonce": req.nonce},
+        )
         verdict, att = self._decide(p)
         if not verdict.allow:
             self._append_audit(p, verdict, att, settled=False)

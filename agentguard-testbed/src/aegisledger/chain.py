@@ -1,10 +1,13 @@
 """Internal chain boundary with deterministic LocalChain and authenticated JSON-RPC adapters."""
+
 from __future__ import annotations
 
 import ipaddress
 import itertools
+from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
-from typing import Callable, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlparse
 
 import httpx
@@ -86,7 +89,7 @@ class LocalChainBackend:
         return self._receipts.get(transaction_hash)
 
 
-RpcCallable = Callable[[str, list], object]
+RpcCallable = Callable[[str, list[Any]], object]
 
 
 class JsonRpcChainBackend:
@@ -110,7 +113,8 @@ class JsonRpcChainBackend:
         self._finality_confirmations = finality_confirmations
         self._network_verified = False
         self._counter = itertools.count(1)
-        self._client = None
+        self._client: httpx.Client | None = None
+        self._rpc: RpcCallable
         if rpc is None:
             headers = {"Authorization": authorization_header} if authorization_header else {}
             self._client = httpx.Client(
@@ -130,10 +134,8 @@ class JsonRpcChainBackend:
         if not parsed.hostname:
             raise RpcConfigurationError("RPC URL must include a host")
         local = parsed.hostname == "localhost"
-        try:
+        with suppress(ValueError):
             local = local or ipaddress.ip_address(parsed.hostname).is_loopback
-        except ValueError:
-            pass
         if parsed.scheme != "https" and not (parsed.scheme == "http" and local):
             raise RpcConfigurationError("remote RPC endpoints must use HTTPS")
 
@@ -141,7 +143,7 @@ class JsonRpcChainBackend:
     def chain_id(self) -> int:
         return self._chain_id
 
-    def _http_rpc(self, method: str, params: list) -> object:
+    def _http_rpc(self, method: str, params: list[Any]) -> object:
         assert self._client is not None
         response = self._client.post(
             self._rpc_url,
@@ -195,14 +197,34 @@ class JsonRpcChainBackend:
         if not isinstance(result, dict):
             raise RuntimeError("RPC receipt response is malformed")
         try:
-            block_number = int(result["blockNumber"], 16)
-            status = int(result["status"], 16)
+            block_number_raw = result["blockNumber"]
+            status_raw = result["status"]
+            transaction_hash_raw = result["transactionHash"]
+            block_hash_raw = result["blockHash"]
             latest = self._rpc("eth_blockNumber", [])
+            if not all(
+                isinstance(value, str)
+                for value in (
+                    block_number_raw,
+                    status_raw,
+                    transaction_hash_raw,
+                    block_hash_raw,
+                    latest,
+                )
+            ):
+                raise TypeError("receipt fields must be hexadecimal strings")
+            assert isinstance(block_number_raw, str)
+            assert isinstance(status_raw, str)
+            assert isinstance(transaction_hash_raw, str)
+            assert isinstance(block_hash_raw, str)
+            assert isinstance(latest, str)
+            block_number = int(block_number_raw, 16)
+            status = int(status_raw, 16)
             latest_number = int(latest, 16)
             confirmations = max(latest_number - block_number + 1, 0)
             return EvmReceipt(
-                transaction_hash=result["transactionHash"].lower(),
-                block_hash=result["blockHash"].lower(),
+                transaction_hash=transaction_hash_raw.lower(),
+                block_hash=block_hash_raw.lower(),
                 block_number=block_number,
                 success=status == 1,
                 confirmations=confirmations,
@@ -231,4 +253,3 @@ class PrivateRelayBackend(JsonRpcChainBackend):
         if not isinstance(result, str) or result.lower() != computed_hash.lower():
             raise RuntimeError("relay returned an unexpected transaction hash")
         return result.lower()
-

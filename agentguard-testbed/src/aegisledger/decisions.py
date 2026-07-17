@@ -1,7 +1,8 @@
 """Policy-service decision issuance and independent signature verification."""
+
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
@@ -25,7 +26,7 @@ class DecisionIssuer:
         self._lifetime_seconds = lifetime_seconds
 
     @classmethod
-    def from_seed(cls, seed: str, *, lifetime_seconds: int = 30) -> "DecisionIssuer":
+    def from_seed(cls, seed: str, *, lifetime_seconds: int = 30) -> DecisionIssuer:
         return cls(KeyPair.from_seed(f"policy-service::{seed}"), lifetime_seconds=lifetime_seconds)
 
     @property
@@ -46,7 +47,7 @@ class DecisionIssuer:
         )
         expires_at = min(
             record.proposal.deadline,
-            datetime.now(timezone.utc) + timedelta(seconds=self._lifetime_seconds),
+            datetime.now(UTC) + timedelta(seconds=self._lifetime_seconds),
         )
         placeholder = DecisionTokenV1(
             schema_version="aegisledger.decision.v1",
@@ -75,7 +76,7 @@ def verify_decision_token(
     *,
     now: datetime | None = None,
 ) -> bool:
-    current_time = now or datetime.now(timezone.utc)
+    current_time = now or datetime.now(UTC)
     if token.expires_at <= current_time:
         return False
     try:
@@ -83,4 +84,3 @@ def verify_decision_token(
     except ValueError:
         return False
     return verify(public_key, decision_signature_payload(token), signature)
-

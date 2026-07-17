@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -22,41 +22,45 @@ EIP1559_PAYLOAD = "0x02" + "cd" * 64
 
 
 def policy():
-    return PolicyV1.model_validate({
-        "schema_version": "aegisledger.policy.v1",
-        "name": "signer-bound-policy",
-        "default_action": "deny",
-        "enabled_wallets": [WALLET],
-        "enabled_principals": ["researcher"],
-        "enabled_chains": [31337],
-        "enabled_assets": ["TUSDC"],
-        "allowed_recipients": [RECIPIENT],
-        "contract_rules": [],
-        "per_transaction_cap": 1_000,
-        "rolling_caps": [{"window_seconds": 3600, "amount": 5_000}],
-        "maximum_transactions_per_hour": 10,
-        "mandate_required_above": 500,
-        "risk": {
-            "maximum_slippage_bps": 50,
-            "maximum_quote_age_seconds": 30,
-            "deny_on_missing_quote": True,
-        },
-        "emergency_stop": False,
-    })
+    return PolicyV1.model_validate(
+        {
+            "schema_version": "aegisledger.policy.v1",
+            "name": "signer-bound-policy",
+            "default_action": "deny",
+            "enabled_wallets": [WALLET],
+            "enabled_principals": ["researcher"],
+            "enabled_chains": [31337],
+            "enabled_assets": ["TUSDC"],
+            "allowed_recipients": [RECIPIENT],
+            "contract_rules": [],
+            "per_transaction_cap": 1_000,
+            "rolling_caps": [{"window_seconds": 3600, "amount": 5_000}],
+            "maximum_transactions_per_hour": 10,
+            "mandate_required_above": 500,
+            "risk": {
+                "maximum_slippage_bps": 50,
+                "maximum_quote_age_seconds": 30,
+                "deny_on_missing_quote": True,
+            },
+            "emergency_stop": False,
+        }
+    )
 
 
 def proposal(amount=100, chain_id=31337):
-    return ProposalV1.model_validate({
-        "schema_version": "aegisledger.proposal.v1",
-        "principal_id": "researcher",
-        "wallet": WALLET,
-        "chain_id": chain_id,
-        "asset": "TUSDC",
-        "amount": amount,
-        "intent": {"kind": "transfer", "recipient": RECIPIENT},
-        "deadline": datetime.now(timezone.utc) + timedelta(minutes=5),
-        "idempotency_key": f"signer-request-{amount}-{chain_id}",
-    })
+    return ProposalV1.model_validate(
+        {
+            "schema_version": "aegisledger.proposal.v1",
+            "principal_id": "researcher",
+            "wallet": WALLET,
+            "chain_id": chain_id,
+            "asset": "TUSDC",
+            "amount": amount,
+            "intent": {"kind": "transfer", "recipient": RECIPIENT},
+            "deadline": datetime.now(UTC) + timedelta(minutes=5),
+            "idempotency_key": f"signer-request-{amount}-{chain_id}",
+        }
+    )
 
 
 def authorized_request():
@@ -137,7 +141,7 @@ def test_wrong_chain_expired_and_replayed_requests_are_rejected():
     with pytest.raises(SignerAuthorizationError, match="chain"):
         SignerAuthorizationGate(issuer.public_key, {31337}).validate_and_consume(wrong_chain)
 
-    expired = request.model_copy(update={"expires_at": datetime.now(timezone.utc) - timedelta(seconds=1)})
+    expired = request.model_copy(update={"expires_at": datetime.now(UTC) - timedelta(seconds=1)})
     with pytest.raises(SignerAuthorizationError, match="expired"):
         SignerAuthorizationGate(issuer.public_key, {31337}).validate_and_consume(expired)
 

@@ -26,8 +26,7 @@ def test_unsigned_transaction_is_rejected_before_mempool_entry():
     chain = LocalChain()
     keys = KeyPair.from_seed("unsigned-owner")
     chain.mint("TUSDC", keys.address, 100)
-    tx = Tx(kind=TxKind.TRANSFER, sender=keys.address, to="0xrecipient",
-            amount=10, asset="TUSDC")
+    tx = Tx(kind=TxKind.TRANSFER, sender=keys.address, to="0xrecipient", amount=10, asset="TUSDC")
 
     with pytest.raises(RuleViolation, match="signature"):
         chain.submit(tx)
@@ -100,12 +99,14 @@ def test_guard_records_spend_only_after_successful_settlement():
     tb = Testbed(mode=DefenseMode.GUARD_STRICT, seed="settlement-truth")
     tb.chain.tokens["TUSDC"].balances[tb.wallet] = 0
 
-    receipt = tb.client.submit(Proposal(
-        kind="transfer",
-        amount=1_000_000,
-        to=tb.vendors["data-api"],
-        purpose="will-revert",
-    ))
+    receipt = tb.client.submit(
+        Proposal(
+            kind="transfer",
+            amount=1_000_000,
+            to=tb.vendors["data-api"],
+            purpose="will-revert",
+        )
+    )
     mined = tb.mine()[0]
 
     assert receipt.verdict.allow

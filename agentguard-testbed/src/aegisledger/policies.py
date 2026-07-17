@@ -1,17 +1,19 @@
 """Immutable policy version workflow with two-person activation."""
+
 from __future__ import annotations
 
 import threading
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Protocol
 
 from .canonical import uuid7
 from .policy import PolicyV1
 
 
-class PolicyStatus(str, Enum):
+class PolicyStatus(StrEnum):
     DRAFT = "DRAFT"
     APPROVED = "APPROVED"
     ACTIVE = "ACTIVE"
@@ -31,6 +33,20 @@ class PolicyVersion:
     activated_by: str | None = None
 
 
+class PolicyStore(Protocol):
+    def create(self, policy: PolicyV1, *, created_by: str) -> PolicyVersion: ...
+
+    def approve(self, version_id: uuid.UUID, administrator_id: str) -> PolicyVersion: ...
+
+    def activate(self, version_id: uuid.UUID, *, activated_by: str) -> PolicyVersion: ...
+
+    def get(self, version_id: uuid.UUID) -> PolicyVersion: ...
+
+    def active(self) -> PolicyVersion: ...
+
+    def list(self) -> tuple[PolicyVersion, ...]: ...
+
+
 class PolicyRegistry:
     def __init__(self) -> None:
         self._lock = threading.RLock()
@@ -45,7 +61,7 @@ class PolicyRegistry:
                 policy_hash=policy.policy_hash(),
                 status=PolicyStatus.DRAFT,
                 created_by=created_by,
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
             )
             self._versions[version.version_id] = version
             return version
@@ -64,11 +80,13 @@ class PolicyRegistry:
         with self._lock:
             version = self.get(version_id)
             if len(version.approvals) < 2:
-                raise PermissionError("policy activation requires two distinct administrator approvals")
+                raise PermissionError(
+                    "policy activation requires two distinct administrator approvals"
+                )
             if self._active_id is not None and self._active_id != version_id:
                 self._versions[self._active_id].status = PolicyStatus.RETIRED
             version.status = PolicyStatus.ACTIVE
-            version.activated_at = datetime.now(timezone.utc)
+            version.activated_at = datetime.now(UTC)
             version.activated_by = activated_by
             self._active_id = version_id
             return version
@@ -88,4 +106,3 @@ class PolicyRegistry:
     def list(self) -> tuple[PolicyVersion, ...]:
         with self._lock:
             return tuple(sorted(self._versions.values(), key=lambda item: item.created_at))
-

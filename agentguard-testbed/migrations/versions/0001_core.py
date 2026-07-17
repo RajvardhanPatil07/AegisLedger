@@ -3,6 +3,7 @@
 Revision ID: 0001_core
 Revises: None
 """
+
 from alembic import op
 
 revision = "0001_core"
@@ -24,7 +25,8 @@ def upgrade() -> None:
           status text NOT NULL CHECK (status IN ('DRAFT','APPROVED','ACTIVE','RETIRED')),
           created_by text NOT NULL,
           created_at timestamptz NOT NULL DEFAULT now(),
-          activated_at timestamptz
+          activated_at timestamptz,
+          activated_by text
         );
         CREATE TABLE policy_approvals (
           policy_version_id uuid NOT NULL REFERENCES policy_versions(id),
@@ -47,6 +49,7 @@ def upgrade() -> None:
           body jsonb NOT NULL,
           state lifecycle_state NOT NULL DEFAULT 'PROPOSED',
           state_version bigint NOT NULL DEFAULT 0,
+          reason_codes text[] NOT NULL DEFAULT '{}',
           deadline timestamptz NOT NULL,
           created_at timestamptz NOT NULL DEFAULT now(),
           updated_at timestamptz NOT NULL DEFAULT now(),
@@ -135,6 +138,17 @@ def upgrade() -> None:
           updated_at timestamptz NOT NULL DEFAULT now(),
           PRIMARY KEY (wallet, chain_id)
         );
+        CREATE TABLE decision_nonce_uses (
+          nonce uuid PRIMARY KEY,
+          consumed_at timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE TABLE wallet_nonce_uses (
+          wallet char(42) NOT NULL,
+          chain_id bigint NOT NULL,
+          nonce numeric(78,0) NOT NULL,
+          consumed_at timestamptz NOT NULL DEFAULT now(),
+          PRIMARY KEY (wallet, chain_id, nonce)
+        );
 
         CREATE TABLE audit_events (
           sequence bigserial PRIMARY KEY,
@@ -184,9 +198,9 @@ def downgrade() -> None:
     op.execute("""
         DROP TRIGGER IF EXISTS audit_events_no_update ON audit_events;
         DROP FUNCTION IF EXISTS reject_audit_mutation;
-        DROP TABLE IF EXISTS attestations, attestation_roots, audit_events, nonce_state,
+        DROP TABLE IF EXISTS attestations, attestation_roots, audit_events,
+          wallet_nonce_uses, decision_nonce_uses, nonce_state,
           cart_mandate_uses, mandates, settlements, transactions, decisions, reservations,
           proposals, policy_approvals, policy_versions CASCADE;
         DROP TYPE IF EXISTS lifecycle_state;
     """)
-

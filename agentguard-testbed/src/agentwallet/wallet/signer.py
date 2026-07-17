@@ -4,6 +4,7 @@ Agents and tools never receive an IsolatedSigner reference — the guard owns it
 and calls it only after an ALLOW verdict. This models TEE/MPC custody: the
 model proposes, the signer disposes.
 """
+
 from __future__ import annotations
 
 from ..chain.crypto import KeyPair

@@ -12,6 +12,7 @@ license = { text = "Apache-2.0" }
 dependencies = [
   "alembic>=1.13,<2",
   "cryptography>=42,<46",
+  "eth-hash[pycryptodome]>=0.7,<1",
   "fastapi>=0.109,<1",
   "grpcio>=1.65,<2",
   "httpx>=0.27,<1",
@@ -65,4 +66,3 @@ packages = ["aegisledger"]
 
 [tool.bandit]
 exclude_dirs = ["tests"]
-

@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package aegisledger.signer.v1;
+
+service IsolatedSigner {
+  rpc PublicIdentity(PublicIdentityRequest) returns (PublicIdentityResponse);
+  rpc SignAuthorizedTransaction(SignAuthorizedTransactionRequest)
+      returns (SignAuthorizedTransactionResponse);
+}
+
+message PublicIdentityRequest {}
+
+message PublicIdentityResponse {
+  string signer_identity = 1;
+  string secp256k1_public_key = 2;
+  string build_measurement = 3;
+}
+
+message SignAuthorizedTransactionRequest {
+  // RFC 8785-compatible JSON matching aegisledger.sign_request.v1.
+  bytes authorization_json = 1;
+}
+
+message SignAuthorizedTransactionResponse {
+  string eip1559_hash = 1;
+  uint64 wallet_nonce = 2;
+  uint64 chain_id = 3;
+  string decision_id = 4;
+  string signer_identity = 5;
+  string signature = 6;
+  bytes enclave_evidence_json = 7;
+}
+

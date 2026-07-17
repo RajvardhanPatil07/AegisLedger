@@ -1,6 +1,16 @@
+import json
 from datetime import datetime, timedelta, timezone
 
-from aegisledger.audit import AuditJournal, verify_journal
+import pytest
+
+from aegisledger.audit import (
+    AnchoringService,
+    AnchorReceiptV1,
+    AuditJournal,
+    MemoryRetentionStore,
+    verify_anchored_journal,
+    verify_journal,
+)
 
 
 def populated_journal() -> AuditJournal:
@@ -67,3 +77,55 @@ def test_anchor_due_after_100_events_or_five_minutes():
     later.append("TEST", "runner", {"index": 0})
     later._now = lambda: now + timedelta(minutes=5)
     assert later.anchor_due()
+
+
+class FakeAnchor:
+    def __init__(self):
+        self.checkpoints = []
+
+    def anchor(self, checkpoint):
+        self.checkpoints.append(checkpoint)
+        return AnchorReceiptV1(
+            schema_version="aegisledger.anchor_receipt.v1",
+            checkpoint_id=checkpoint.checkpoint_id,
+            chain_id=11155111,
+            contract="0x" + "ab" * 20,
+            transaction_hash="0x" + "cd" * 32,
+            block_number=123,
+            merkle_root=checkpoint.merkle_root,
+            anchored_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+
+
+def test_anchoring_service_retains_full_history_checkpoint_and_external_receipt():
+    journal = populated_journal()
+    store = MemoryRetentionStore()
+    anchor = FakeAnchor()
+    result = AnchoringService(
+        store,
+        anchor,
+        retention=timedelta(days=365),
+        now=lambda: datetime(2026, 1, 1, tzinfo=timezone.utc),
+    ).anchor(journal)
+
+    assert verify_anchored_journal(journal.events, result.checkpoint, result.receipt).valid
+    assert result.history_key in store.object_keys()
+    retained = json.loads(store.read(result.history_key))
+    assert len(retained["events"]) == 5
+
+    with pytest.raises(FileExistsError):
+        store.put_once(
+            result.history_key,
+            b"replacement",
+            retain_until=datetime(2027, 1, 1, tzinfo=timezone.utc),
+        )
+
+
+def test_external_anchor_detects_replaced_checkpoint():
+    journal = populated_journal()
+    checkpoint = journal.checkpoint()
+    receipt = FakeAnchor().anchor(checkpoint)
+    replaced = checkpoint.model_copy(update={"merkle_root": "0x" + "99" * 32})
+    report = verify_anchored_journal(journal.events, replaced, receipt)
+    assert not report.valid
+    assert "external anchor root" in " ".join(report.errors)

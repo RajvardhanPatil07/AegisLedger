@@ -2,21 +2,25 @@
 from __future__ import annotations
 
 import inspect
-import json
+import os
+import threading
 import uuid
+from collections.abc import Awaitable
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable, Union
+from pathlib import Path
+from typing import Callable, Union
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .attestations import CompleteAttestationV1, verify_complete_attestation
 from .audit import AuditJournal
 from .auth import AuthenticationError, OIDCAuthenticator, Principal, Role
-from .canonical import uuid7
 from .contracts import DecisionTokenV1, LifecycleState, ProposalV1
 from .decisions import DecisionIssuer, verify_decision_token
+from .evaluation import ExperimentRunner, Scenario, create_experiment_spec
 from .policies import PolicyRegistry, PolicyStatus, PolicyVersion
 from .policy import PolicyV1
 from .state import MemoryStateStore, ProposalRecord
@@ -71,26 +75,45 @@ class PolicySimulationResponse(BaseModel):
 class AttestationVerificationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    decision: DecisionTokenV1
+    decision: DecisionTokenV1 | None = None
+    attestation: CompleteAttestationV1 | None = None
+
+    @model_validator(mode="after")
+    def exactly_one_artifact(self) -> AttestationVerificationRequest:
+        if (self.decision is None) == (self.attestation is None):
+            raise ValueError("provide exactly one decision or complete attestation")
+        return self
 
 
 class AttestationVerificationResponse(BaseModel):
     valid: bool
     signer_identity: str
+    errors: tuple[str, ...] = ()
 
 
 class ExperimentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     seed: str = Field(min_length=1, max_length=128)
-    scenarios: tuple[str, ...] = ()
+    scenarios: tuple[Scenario, ...] = ()
     runs_per_scenario: int = Field(default=12, gt=0, le=1_000)
+
+    @field_validator("scenarios", mode="before")
+    @classmethod
+    def accept_scenario_array(cls, value: object) -> tuple[object, ...]:
+        if not isinstance(value, (list, tuple)):
+            raise TypeError("scenarios must be an array")
+        return tuple(value)
 
 
 class ExperimentResponse(BaseModel):
     experiment_id: uuid.UUID
     status: str
     seed: str
+    configuration_hash: str
+    result_uri: str | None = None
+    summary: dict[str, object] | None = None
+    error: str | None = None
 
 
 Authenticator = Callable[[Request], Union[Principal, Awaitable[Principal]]]
@@ -104,6 +127,17 @@ class ServiceContainer:
     audit: AuditJournal = field(default_factory=AuditJournal)
     issued_decisions: dict[uuid.UUID, DecisionTokenV1] = field(default_factory=dict)
     experiments: dict[uuid.UUID, ExperimentResponse] = field(default_factory=dict)
+    allowed_build_measurements: set[str] = field(
+        default_factory=lambda: {"development-unmeasured"}
+    )
+    experiment_runner: ExperimentRunner = field(default_factory=ExperimentRunner)
+    experiment_output_root: Path = field(default_factory=lambda: Path("artifacts/experiments"))
+    commit_sha: str = field(default_factory=lambda: os.getenv("AEGISLEDGER_COMMIT_SHA", "0" * 40))
+    _experiment_lock: threading.RLock = field(
+        default_factory=threading.RLock,
+        init=False,
+        repr=False,
+    )
 
     def submit(self, proposal: ProposalV1, actor: str) -> SubmissionResponse:
         version = self.policies.active()
@@ -131,6 +165,49 @@ class ServiceContainer:
             created=result.created,
             decision=decision,
         )
+
+    def queue_experiment(self, request: ExperimentRequest) -> ExperimentResponse:
+        spec = create_experiment_spec(
+            seed=request.seed,
+            runs_per_scenario=request.runs_per_scenario,
+            scenarios=request.scenarios,
+            commit_sha=self.commit_sha,
+        )
+        response = ExperimentResponse(
+            experiment_id=spec.experiment_id,
+            status="QUEUED",
+            seed=spec.seed,
+            configuration_hash=spec.configuration_hash,
+        )
+        with self._experiment_lock:
+            self.experiments[spec.experiment_id] = response
+        return response
+
+    def run_experiment(self, experiment_id: uuid.UUID, request: ExperimentRequest) -> None:
+        with self._experiment_lock:
+            queued = self.experiments[experiment_id]
+            self.experiments[experiment_id] = queued.model_copy(update={"status": "RUNNING"})
+        try:
+            spec = create_experiment_spec(
+                seed=request.seed,
+                runs_per_scenario=request.runs_per_scenario,
+                scenarios=request.scenarios,
+                commit_sha=self.commit_sha,
+            ).model_copy(update={"experiment_id": experiment_id})
+            output = self.experiment_output_root / str(experiment_id)
+            artifacts = self.experiment_runner.run(spec, output)
+            result = queued.model_copy(update={
+                "status": "COMPLETED",
+                "result_uri": str(output / "summary.json"),
+                "summary": artifacts.summary,
+            })
+        except Exception as exc:
+            result = queued.model_copy(update={
+                "status": "FAILED",
+                "error": type(exc).__name__,
+            })
+        with self._experiment_lock:
+            self.experiments[experiment_id] = result
 
 
 def _policy_response(version: PolicyVersion) -> PolicyVersionResponse:
@@ -171,7 +248,12 @@ def create_app(
         if content_length and int(content_length) > 1_000_000:
             return JSONResponse(
                 status_code=413,
-                content={"error": {"code": "PAYLOAD_TOO_LARGE", "message": "request body exceeds 1 MB"}},
+                content={
+                    "error": {
+                        "code": "PAYLOAD_TOO_LARGE",
+                        "message": "request body exceeds 1 MB",
+                    }
+                },
             )
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -230,7 +312,11 @@ def create_app(
         principal: Principal = Depends(require_roles(Role.RESEARCHER)),
     ):
         if proposal.principal_id != principal.subject:
-            raise ApiError(403, "PRINCIPAL_MISMATCH", "proposal principal must match authenticated subject")
+            raise ApiError(
+                403,
+                "PRINCIPAL_MISMATCH",
+                "proposal principal must match authenticated subject",
+            )
         try:
             return services.submit(proposal, principal.subject)
         except LookupError as exc:
@@ -312,18 +398,37 @@ def create_app(
         request: AttestationVerificationRequest,
         _principal: Principal = Depends(require_roles(Role.AUDITOR, Role.RESEARCHER)),
     ):
+        if request.attestation is not None:
+            report = verify_complete_attestation(
+                request.attestation,
+                services.decisions.public_key,
+                allowed_build_measurements=services.allowed_build_measurements,
+            )
+            return AttestationVerificationResponse(
+                valid=report.valid,
+                signer_identity=request.attestation.signed_transaction.signer_identity,
+                errors=report.errors,
+            )
+        assert request.decision is not None
+        valid = verify_decision_token(request.decision, services.decisions.public_key)
         return AttestationVerificationResponse(
-            valid=verify_decision_token(request.decision, services.decisions.public_key),
+            valid=valid,
             signer_identity=request.decision.policy_signer,
+            errors=() if valid else ("policy decision signature is invalid or expired",),
         )
 
     @app.post("/api/v1/experiments", response_model=ExperimentResponse, status_code=202)
     async def execute_experiment(
         request: ExperimentRequest,
+        background_tasks: BackgroundTasks,
         _principal: Principal = Depends(require_roles(Role.RESEARCHER)),
     ):
-        experiment = ExperimentResponse(experiment_id=uuid7(), status="QUEUED", seed=request.seed)
-        services.experiments[experiment.experiment_id] = experiment
+        experiment = services.queue_experiment(request)
+        background_tasks.add_task(
+            services.run_experiment,
+            experiment.experiment_id,
+            request,
+        )
         return experiment
 
     @app.get("/api/v1/experiments/{experiment_id}", response_model=ExperimentResponse)
@@ -332,7 +437,8 @@ def create_app(
         _principal: Principal = Depends(require_roles(Role.VIEWER, Role.RESEARCHER, Role.AUDITOR)),
     ):
         try:
-            return services.experiments[experiment_id]
+            with services._experiment_lock:
+                return services.experiments[experiment_id]
         except KeyError as exc:
             raise ApiError(404, "EXPERIMENT_NOT_FOUND", "experiment does not exist") from exc
 
@@ -342,7 +448,11 @@ def create_app(
     ):
         async def events():
             for event in services.audit.events:
-                yield f"id: {event.sequence}\nevent: {event.event_type}\ndata: {event.model_dump_json()}\n\n"
+                yield (
+                    f"id: {event.sequence}\n"
+                    f"event: {event.event_type}\n"
+                    f"data: {event.model_dump_json()}\n\n"
+                )
 
         return StreamingResponse(events(), media_type="text/event-stream")
 

@@ -2,13 +2,19 @@
 from __future__ import annotations
 
 import hashlib
-import re
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from .canonical import canonical_json, uuid7
 
@@ -96,7 +102,7 @@ class ProposalV1(StrictModel):
         return value.astimezone(timezone.utc)
 
     @model_validator(mode="after")
-    def deadline_must_be_future(self) -> "ProposalV1":
+    def deadline_must_be_future(self) -> ProposalV1:
         if self.deadline <= datetime.now(timezone.utc):
             raise ValueError("deadline must be in the future")
         return self
@@ -144,7 +150,7 @@ class DecisionTokenV1(StrictModel):
         return value.astimezone(timezone.utc)
 
     @model_validator(mode="after")
-    def reservation_matches_verdict(self) -> "DecisionTokenV1":
+    def reservation_matches_verdict(self) -> DecisionTokenV1:
         if self.verdict is DecisionVerdict.ALLOW and self.reservation_id is None:
             raise ValueError("ALLOW decisions require a reservation")
         if self.verdict is DecisionVerdict.DENY and self.reservation_id is not None:
@@ -162,7 +168,7 @@ class SignedTransactionV1(StrictModel):
     chain_id: Annotated[int, Field(gt=0)]
     decision_id: uuid.UUID
     signer_identity: Annotated[str, StringConstraints(min_length=1, max_length=256)]
-    enclave_evidence: dict[str, str]
+    enclave_evidence: dict[str, object]
     signature: Annotated[str, StringConstraints(pattern=r"^0x[0-9a-f]{130}$")]
 
 
@@ -178,7 +184,11 @@ class LifecycleState(str, Enum):
 
 
 _ALLOWED_TRANSITIONS = {
-    LifecycleState.PROPOSED: {LifecycleState.RESERVED, LifecycleState.DENIED, LifecycleState.EXPIRED},
+    LifecycleState.PROPOSED: {
+        LifecycleState.RESERVED,
+        LifecycleState.DENIED,
+        LifecycleState.EXPIRED,
+    },
     LifecycleState.RESERVED: {LifecycleState.SIGNED, LifecycleState.EXPIRED},
     LifecycleState.SIGNED: {LifecycleState.SUBMITTED, LifecycleState.EXPIRED},
     LifecycleState.SUBMITTED: {LifecycleState.SETTLED, LifecycleState.REVERTED},

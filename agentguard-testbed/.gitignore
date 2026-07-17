@@ -3,6 +3,7 @@
 .env.local
 .env.*.local
 .mypy_cache/
+.hypothesis/
 .pytest_cache/
 .ruff_cache/
 .venv/
@@ -15,8 +16,8 @@ contracts/broadcast/
 contracts/cache/
 contracts/out/
 dist/
+artifacts/
 htmlcov/
 node_modules/
 signer/target/
 web/dist/
-

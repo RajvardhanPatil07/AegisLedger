@@ -116,6 +116,29 @@ def test_policy_activation_api_enforces_two_distinct_approvals():
     assert admin_a.post(f"/api/v1/policies/{version_id}/activate").status_code == 200
 
 
+def test_experiment_api_executes_and_retains_reproducible_results(tmp_path):
+    container = container_with_active_policy()
+    container.experiment_output_root = tmp_path
+    client, _ = client_for(
+        Principal(subject="researcher", roles={Role.RESEARCHER}),
+        container,
+    )
+    queued = client.post(
+        "/api/v1/experiments",
+        json={
+            "seed": "api-experiment",
+            "scenarios": ["II-tool-poisoning"],
+            "runs_per_scenario": 1,
+        },
+    )
+    assert queued.status_code == 202
+    experiment_id = queued.json()["experiment_id"]
+    result = client.get(f"/api/v1/experiments/{experiment_id}")
+    assert result.status_code == 200
+    assert result.json()["status"] == "COMPLETED"
+    assert result.json()["summary"]["raw_run_count"] == 5
+
+
 def test_openapi_exposes_versioned_capabilities_without_raw_signing_or_submission():
     client, _ = client_for(Principal(subject="auditor", roles={Role.AUDITOR}))
     paths = client.get("/openapi.json").json()["paths"]

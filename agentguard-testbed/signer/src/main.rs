@@ -4,7 +4,7 @@ use std::fs;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use ed25519_dalek::{Signature as Ed25519Signature, Verifier, VerifyingKey};
 use k256::ecdsa::SigningKey;
 use rand_core::OsRng;
@@ -305,14 +305,50 @@ impl IsolatedSigner for SignerService {
             .insert((wallet, chain_id), wallet_nonce + 1);
         drop(replay);
 
-        let evidence = json!({
+        let evidence_unsigned = json!({
             "schema_version": "aegisledger.enclave_evidence.v1",
             "mode": "local-process-or-nitro",
             "build_measurement": self.build_measurement,
             "signer_identity": self.signer_identity,
+            "secp256k1_public_key": self.public_key_hex,
+            "transaction_hash": digest_hex,
+            "proposal_hash": string(&root, &["decision", "proposal_hash"])
+                .map_err(|_| Status::invalid_argument("proposal hash missing"))?,
+            "policy_version_id": string(&root, &["decision", "policy_version_id"])
+                .map_err(|_| Status::invalid_argument("policy version missing"))?,
+            "policy_hash": string(&root, &["decision", "policy_hash"])
+                .map_err(|_| Status::invalid_argument("policy hash missing"))?,
+            "state_version": number(&root, &["decision", "state_version"])
+                .map_err(|_| Status::invalid_argument("state version missing"))?,
+            "reservation_id": string(&root, &["reservation_id"])
+                .map_err(|_| Status::invalid_argument("reservation missing"))?,
+            "wallet": string(&root, &["proposal", "wallet"])
+                .map_err(|_| Status::invalid_argument("wallet missing"))?,
+            "principal_id": string(&root, &["proposal", "principal_id"])
+                .map_err(|_| Status::invalid_argument("principal missing"))?,
+            "chain_id": chain_id,
+            "wallet_nonce": wallet_nonce,
+            "decision_id": string(&root, &["decision", "decision_id"])
+                .map_err(|_| Status::invalid_argument("decision id missing"))?,
             "decision_nonce": decision_nonce,
-            "issued_at": Utc::now().to_rfc3339(),
+            "expires_at": parse_expiry(&root, &["expires_at"])
+                .map_err(|_| Status::invalid_argument("expiry missing"))?
+                .to_rfc3339_opts(SecondsFormat::AutoSi, true),
+            "issued_at": Utc::now().to_rfc3339_opts(SecondsFormat::AutoSi, true),
         });
+        let evidence_canonical = serde_jcs::to_vec(&evidence_unsigned)
+            .map_err(|_| Status::internal("evidence canonicalization failure"))?;
+        let evidence_digest = Sha256::digest(evidence_canonical);
+        let (evidence_signature, evidence_recovery_id) = self
+            .signing_key
+            .sign_prehash_recoverable(&evidence_digest)
+            .map_err(|_| Status::internal("evidence signing failure"))?;
+        let mut evidence_signature_bytes = evidence_signature.to_bytes().to_vec();
+        evidence_signature_bytes.push(evidence_recovery_id.to_byte());
+        let mut evidence = evidence_unsigned;
+        evidence["evidence_hash"] = json!(format!("0x{}", hex::encode(evidence_digest)));
+        evidence["evidence_signature"] =
+            json!(format!("0x{}", hex::encode(evidence_signature_bytes)));
         info!(chain_id, wallet_nonce, "authorized transaction signed");
         Ok(Response::new(SignAuthorizedTransactionResponse {
             eip1559_hash: digest_hex,

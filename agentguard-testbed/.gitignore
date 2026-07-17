@@ -11,6 +11,9 @@ __pycache__/
 *.key
 *.pem
 coverage.xml
+contracts/broadcast/
+contracts/cache/
+contracts/out/
 dist/
 htmlcov/
 node_modules/

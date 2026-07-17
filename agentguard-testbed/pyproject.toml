@@ -50,6 +50,9 @@ packages = ["src/aegisledger", "src/agentwallet"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--strict-config --strict-markers"
+markers = [
+  "anvil: starts a local Anvil process and exercises deployed contracts",
+]
 
 [tool.ruff]
 target-version = "py39"

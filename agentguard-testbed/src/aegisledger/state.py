@@ -11,6 +11,39 @@ from .contracts import LifecycleState, ProposalV1, require_transition
 from .policy import PolicyV1
 
 
+def static_policy_reasons(proposal: ProposalV1, policy: PolicyV1) -> list[str]:
+    """Evaluate constraints that do not depend on mutable budget state."""
+    reasons: list[str] = []
+    if policy.emergency_stop:
+        return ["EMERGENCY_STOP"]
+    if proposal.wallet not in policy.enabled_wallets:
+        reasons.append("WALLET_NOT_ENABLED")
+    if proposal.principal_id not in policy.enabled_principals:
+        reasons.append("PRINCIPAL_NOT_ENABLED")
+    if proposal.chain_id not in policy.enabled_chains:
+        reasons.append("CHAIN_NOT_ENABLED")
+    if proposal.asset not in policy.enabled_assets:
+        reasons.append("ASSET_NOT_ENABLED")
+    if proposal.amount > policy.per_transaction_cap:
+        reasons.append("PER_TRANSACTION_CAP_EXCEEDED")
+    if proposal.intent.kind == "transfer":
+        if proposal.intent.recipient not in policy.allowed_recipients:
+            reasons.append("RECIPIENT_NOT_ALLOWED")
+    else:
+        allowed = {
+            (rule.contract, selector.lower())
+            for rule in policy.contract_rules
+            for selector in rule.selectors
+        }
+        if (proposal.intent.contract, proposal.intent.selector.lower()) not in allowed:
+            reasons.append("CONTRACT_SELECTOR_NOT_ALLOWED")
+        if policy.risk.deny_on_missing_quote and proposal.quote_reference is None:
+            reasons.append("QUOTE_REQUIRED")
+    if proposal.amount > policy.mandate_required_above and proposal.mandate_id is None:
+        reasons.append("MANDATE_REQUIRED")
+    return reasons
+
+
 @dataclass
 class Reservation:
     reservation_id: uuid.UUID
@@ -110,32 +143,7 @@ class MemoryStateStore:
             return tuple(self._evaluate(proposal, policy))
 
     def _evaluate(self, proposal: ProposalV1, policy: PolicyV1) -> list[str]:
-        reasons: list[str] = []
-        if policy.emergency_stop:
-            return ["EMERGENCY_STOP"]
-        if proposal.wallet not in policy.enabled_wallets:
-            reasons.append("WALLET_NOT_ENABLED")
-        if proposal.principal_id not in policy.enabled_principals:
-            reasons.append("PRINCIPAL_NOT_ENABLED")
-        if proposal.chain_id not in policy.enabled_chains:
-            reasons.append("CHAIN_NOT_ENABLED")
-        if proposal.asset not in policy.enabled_assets:
-            reasons.append("ASSET_NOT_ENABLED")
-        if proposal.amount > policy.per_transaction_cap:
-            reasons.append("PER_TRANSACTION_CAP_EXCEEDED")
-        if proposal.intent.kind == "transfer":
-            if proposal.intent.recipient not in policy.allowed_recipients:
-                reasons.append("RECIPIENT_NOT_ALLOWED")
-        else:
-            allowed = {
-                (rule.contract, selector.lower())
-                for rule in policy.contract_rules
-                for selector in rule.selectors
-            }
-            if (proposal.intent.contract, proposal.intent.selector.lower()) not in allowed:
-                reasons.append("CONTRACT_SELECTOR_NOT_ALLOWED")
-        if proposal.amount > policy.mandate_required_above and proposal.mandate_id is None:
-            reasons.append("MANDATE_REQUIRED")
+        reasons = static_policy_reasons(proposal, policy)
 
         active = [
             item
@@ -200,7 +208,13 @@ class MemoryStateStore:
         if record.reservation_id is not None:
             self._reservations[record.reservation_id].active = False
 
-    def budget_totals(self, principal: str, wallet: str, chain_id: int, asset: str) -> tuple[int, int]:
+    def budget_totals(
+        self,
+        principal: str,
+        wallet: str,
+        chain_id: int,
+        asset: str,
+    ) -> tuple[int, int]:
         with self._lock:
             matching = [
                 item

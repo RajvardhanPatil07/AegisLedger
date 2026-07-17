@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Iterator
 
 from .canonical import uuid7
 from .contracts import LifecycleState, ProposalV1
 from .policy import PolicyV1
+from .state import static_policy_reasons
 
 
 class PostgresStateStore:
@@ -24,7 +25,11 @@ class PostgresStateStore:
             with connection.transaction():
                 yield connection
 
-    def reserve(self, proposal: ProposalV1, policy: PolicyV1) -> tuple[LifecycleState, uuid.UUID | None, tuple[str, ...]]:
+    def reserve(
+        self,
+        proposal: ProposalV1,
+        policy: PolicyV1,
+    ) -> tuple[LifecycleState, uuid.UUID | None, tuple[str, ...]]:
         scope = f"{proposal.principal_id}:{proposal.wallet}:{proposal.chain_id}:{proposal.asset}"
         with self._transaction() as connection:
             connection.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (scope,))
@@ -64,25 +69,16 @@ class PostgresStateStore:
             if not reasons:
                 reservation_id = uuid7()
                 connection.execute(
-                    "INSERT INTO reservations (id,proposal_id,amount,status) VALUES (%s,%s,%s,'ACTIVE')",
+                    """INSERT INTO reservations (id,proposal_id,amount,status)
+                       VALUES (%s,%s,%s,'ACTIVE')""",
                     (reservation_id, proposal.proposal_id, proposal.amount),
                 )
             return state, reservation_id, tuple(reasons)
 
     def _scope_reasons(self, connection, proposal: ProposalV1, policy: PolicyV1) -> list[str]:
-        reasons: list[str] = []
-        if policy.emergency_stop:
-            return ["EMERGENCY_STOP"]
-        if proposal.wallet not in policy.enabled_wallets:
-            reasons.append("WALLET_NOT_ENABLED")
-        if proposal.principal_id not in policy.enabled_principals:
-            reasons.append("PRINCIPAL_NOT_ENABLED")
-        if proposal.chain_id not in policy.enabled_chains:
-            reasons.append("CHAIN_NOT_ENABLED")
-        if proposal.asset not in policy.enabled_assets:
-            reasons.append("ASSET_NOT_ENABLED")
-        if proposal.amount > policy.per_transaction_cap:
-            reasons.append("PER_TRANSACTION_CAP_EXCEEDED")
+        reasons = static_policy_reasons(proposal, policy)
+        if reasons == ["EMERGENCY_STOP"]:
+            return reasons
         for cap in policy.rolling_caps:
             row = connection.execute(
                 """SELECT COALESCE(SUM(r.amount),0), COUNT(*)
@@ -90,10 +86,25 @@ class PostgresStateStore:
                    WHERE p.principal_id=%s AND p.wallet=%s AND p.chain_id=%s AND p.asset=%s
                      AND r.status IN ('ACTIVE','SETTLED')
                      AND r.created_at >= now() - make_interval(secs => %s)""",
-                (proposal.principal_id, proposal.wallet, proposal.chain_id, proposal.asset, cap.window_seconds),
+                (
+                    proposal.principal_id,
+                    proposal.wallet,
+                    proposal.chain_id,
+                    proposal.asset,
+                    cap.window_seconds,
+                ),
             ).fetchone()
             if int(row[0]) + proposal.amount > cap.amount:
                 reasons.append("ROLLING_CAP_EXCEEDED")
                 break
+        recent = connection.execute(
+            """SELECT COUNT(*)
+               FROM reservations r JOIN proposals p ON p.id=r.proposal_id
+               WHERE p.principal_id=%s AND p.wallet=%s AND p.chain_id=%s AND p.asset=%s
+                 AND r.status IN ('ACTIVE','SETTLED')
+                 AND r.created_at >= now() - interval '1 hour'""",
+            (proposal.principal_id, proposal.wallet, proposal.chain_id, proposal.asset),
+        ).fetchone()
+        if int(recent[0]) + 1 > policy.maximum_transactions_per_hour:
+            reasons.append("VELOCITY_EXCEEDED")
         return reasons
-

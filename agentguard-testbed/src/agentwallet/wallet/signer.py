@@ -7,6 +7,7 @@ model proposes, the signer disposes.
 from __future__ import annotations
 
 from ..chain.crypto import KeyPair
+from ..chain.ledger import RuleViolation, Tx
 
 
 class IsolatedSigner:
@@ -24,3 +25,10 @@ class IsolatedSigner:
     def sign(self, digest: bytes) -> tuple[str, str]:
         """Returns (pub_hex, sig_hex). Only the guard pipeline may call this."""
         return self._keys.public_key_bytes().hex(), self._keys.sign(digest).hex()
+
+    def authorize_transaction(self, tx: Tx) -> Tx:
+        """Bind this signer to the exact transaction envelope."""
+        if tx.sender.lower() != self.address.lower():
+            raise RuleViolation("isolated signer does not control transaction sender")
+        tx.public_key_hex, tx.signature_hex = self.sign(tx.digest())
+        return tx

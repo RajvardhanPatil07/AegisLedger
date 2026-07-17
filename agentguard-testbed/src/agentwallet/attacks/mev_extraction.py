@@ -36,7 +36,7 @@ def _price_move_bps(chain, amount_in: int) -> int:
 
 def _one_run(mode: DefenseMode, private: bool, seed: str) -> RunOutcome:
     tb = Testbed(mode=mode, seed=seed, amm_a=POOL_A, amm_b=POOL_B)
-    searcher = SearcherBot(address=tb.attacker, front_frac=0.5)
+    searcher = SearcherBot(keys=tb.attacker_keys, front_frac=0.5)
     out = RunOutcome()
 
     searcher_before = tb.balance(tb.attacker)
@@ -79,7 +79,7 @@ def _one_run(mode: DefenseMode, private: bool, seed: str) -> RunOutcome:
         # Normal path: front-run inserted ahead of the victim in the mempool.
         tb.chain.mempool.remove(victim_tx)
         tb.chain.submit(front_tx)
-        tb.chain.submit(victim_tx)
+        tb.chain.mempool.append(victim_tx)  # already authorized before reordering
     tb.mine()
 
     victim_out = 0
@@ -106,9 +106,9 @@ def _back_run(tb: Testbed, searcher: SearcherBot, usdc_before: int) -> None:
     initial_drb = 5_000 * MICRO  # attacker started with this in every testbed
     acquired = drb - initial_drb
     if acquired > 0:
-        tb.chain.submit(Tx(kind=TxKind.SWAP, sender=searcher.address,
-                           amount_in=acquired, token_in="DRB", token_out="TUSDC",
-                           min_out=0))
+        tx = Tx(kind=TxKind.SWAP, sender=searcher.address, amount_in=acquired,
+                token_in="DRB", token_out="TUSDC", min_out=0)
+        tb.chain.submit(searcher.authorize(tb.chain, tx))
         tb.mine()
 
 

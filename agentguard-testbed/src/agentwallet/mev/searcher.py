@@ -12,14 +12,26 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ..chain.crypto import KeyPair
 from ..chain.ledger import LocalChain, Tx, TxKind
 
 
 @dataclass
 class SearcherBot:
-    address: str
+    keys: KeyPair
     front_frac: float = 0.5
     log: list[str] = field(default_factory=list)
+
+    @property
+    def address(self) -> str:
+        return self.keys.address
+
+    def authorize(self, chain: LocalChain, tx: Tx) -> Tx:
+        tx.chain_id = chain.chain_id
+        tx.nonce = chain.next_nonce(self.address)
+        tx.deadline = chain.clock + 300
+        tx.decision_hash = "searcher-strategy"
+        return tx.sign(self.keys)
 
     def plan_sandwich(self, chain: LocalChain) -> tuple[Tx | None, Tx | None]:
         """Inspect the visible mempool; if an agent swap is present, return
@@ -31,6 +43,7 @@ class SearcherBot:
                 if front_amt <= 0 or chain.balance("TUSDC", self.address) < front_amt:
                     return None, None
                 self.log.append(f"sandwich planned vs {tx.sender}: front {front_amt}")
-                return (Tx(kind=TxKind.SWAP, sender=self.address, amount_in=front_amt,
-                           token_in="TUSDC", token_out="DRB", min_out=0), tx)
+                front = Tx(kind=TxKind.SWAP, sender=self.address, amount_in=front_amt,
+                           token_in="TUSDC", token_out="DRB", min_out=0)
+                return self.authorize(chain, front), tx
         return None, None

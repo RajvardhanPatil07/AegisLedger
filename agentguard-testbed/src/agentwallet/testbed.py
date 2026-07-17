@@ -80,7 +80,9 @@ class Testbed:
     client: GuardClient = field(init=False)
     executor: ExecutorAgent = field(init=False)
     language: LanguageAgent = field(init=False)
-    attacker: str = "0xattacker0000000000000000000000000000dead"
+    attacker: str = field(init=False)
+    attacker_keys: KeyPair = field(init=False, repr=False)
+    _host_signer: IsolatedSigner = field(init=False, repr=False)
     vendors: dict = field(init=False)
 
     def __post_init__(self):
@@ -98,6 +100,7 @@ class Testbed:
 
         # --- custody stack ---
         signer = IsolatedSigner(self.seed)
+        self._host_signer = signer
         if self.mode is DefenseMode.CONTRACT_WALLET:
             policy = load_policy(UNRESTRICTED)
         elif self.mode is DefenseMode.GUARD_MEV:
@@ -112,8 +115,11 @@ class Testbed:
         engine = PolicyEngine(policy, now=now)
         attestor = EnclaveAttestor(self.seed, now=now)
         self.guard = AgentGuard(engine, attestor, signer, chain=self.chain)
-        self.client = GuardClient(self.guard, agent_address=f"agent::{self.seed}")
+        self.client = GuardClient(self.guard.submit, agent_address=f"agent::{self.seed}")
         self.wallet = signer.address
+
+        self.attacker_keys = KeyPair.from_seed(f"attacker::{self.seed}")
+        self.attacker = self.attacker_keys.address
 
         # --- contract wallet on-chain rules (second custody configuration) ---
         if self.mode is DefenseMode.CONTRACT_WALLET:
@@ -125,8 +131,7 @@ class Testbed:
         san = Sanitizer(enabled=self.mode in (DefenseMode.MODEL_LEVEL,
                                               DefenseMode.GUARD_FULL))
         self.language = LanguageAgent(sanitizer=san, attacker_address=self.attacker)
-        self.executor = ExecutorAgent(name="executor", client=self.client,
-                                      chain=self.chain)
+        self.executor = ExecutorAgent(name="executor", client=self.client)
 
         # --- funded parties ---
         self.chain.mint("TUSDC", self.wallet, 10_000 * MICRO)
@@ -137,7 +142,19 @@ class Testbed:
         self.clock += seconds
 
     def mine(self):
-        return self.chain.mine_block()
+        receipts = self.chain.mine_block()
+        self.guard.reconcile(receipts)
+        return receipts
+
+    def compromised_submit(self, tx) -> None:
+        """Harness-only capability for compromised-host contract-wallet tests."""
+        if self.mode is not DefenseMode.CONTRACT_WALLET:
+            raise PermissionError("compromised submission is only modeled in contract-wallet mode")
+        tx.chain_id = self.chain.chain_id
+        tx.nonce = self.chain.next_nonce(self.wallet)
+        tx.deadline = self.chain.clock + 300
+        tx.decision_hash = "compromised-host-direct-rpc"
+        self.chain.submit(self._host_signer.authorize_transaction(tx))
 
     def balance(self, addr: str, asset: str = "TUSDC") -> int:
         return self.chain.balance(asset, addr)

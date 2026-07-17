@@ -45,8 +45,9 @@ class TestAuditTamperEvidence:
                                   to=tb.vendors["data-api"], purpose="ok"))
         tb.client.submit(Proposal(kind="transfer", amount=2_000_000,
                                   to=tb.vendors["data-api"], purpose="ok2"))
+        tb.mine()
         # Attacker rewrites history: mark a settled entry as not settled.
-        tb.guard.audit[0].settled = False
+        next(entry for entry in tb.guard.audit if entry.settled).settled = False
         assert not tb.guard.verify_audit_chain()
 
 
@@ -56,10 +57,10 @@ class TestContractWalletBypassResistance:
         raw transaction. On-chain rules still reject it at settlement."""
         tb = Testbed(mode=DefenseMode.CONTRACT_WALLET, seed="sec6")
         attacker_before = tb.balance(tb.attacker)
-        tb.chain.submit(Tx(kind=TxKind.TRANSFER, sender=tb.wallet, to=tb.attacker,
-                           amount=150_000_000, asset="TUSDC"))  # under cap -> allowed
-        tb.chain.submit(Tx(kind=TxKind.TRANSFER, sender=tb.wallet, to=tb.attacker,
-                           amount=900_000_000, asset="TUSDC"))  # over cap -> reverted
+        tb.compromised_submit(Tx(kind=TxKind.TRANSFER, sender=tb.wallet, to=tb.attacker,
+                                 amount=150_000_000, asset="TUSDC"))  # under cap -> allowed
+        tb.compromised_submit(Tx(kind=TxKind.TRANSFER, sender=tb.wallet, to=tb.attacker,
+                                 amount=900_000_000, asset="TUSDC"))  # over cap -> reverted
         receipts = tb.mine()
         assert receipts[0].success
         assert not receipts[1].success

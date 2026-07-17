@@ -11,14 +11,12 @@ from dataclasses import dataclass, field
 from .base import PaymentInstruction
 from ..guard.engine import Proposal
 from ..guard.guard import GuardClient, GuardReceipt
-from ..chain.ledger import LocalChain
 
 
 @dataclass
 class ExecutorAgent:
     name: str
     client: GuardClient
-    chain: LocalChain | None = None
     trust_peer_instructions: bool = True
     inbound_asset_grants: bool = False     # the legacy flaw toggle
     accepts_public_commands: bool = False  # trust "public reply" as authorized

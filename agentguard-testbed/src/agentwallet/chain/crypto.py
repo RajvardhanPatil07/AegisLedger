@@ -15,9 +15,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 )
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
-    PrivateFormat,
     PublicFormat,
-    NoEncryption,
 )
 
 
@@ -48,11 +46,6 @@ class KeyPair:
 
     def public_key_bytes(self) -> bytes:
         return self.pub.public_bytes(Encoding.Raw, PublicFormat.Raw)
-
-    def private_bytes_for_backup_only(self) -> bytes:
-        """Exported solely for test fixtures; never called by agents or tools."""
-        return self._priv.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
-
 
 def verify(pub: Ed25519PublicKey, msg: bytes, sig: bytes) -> bool:
     try:

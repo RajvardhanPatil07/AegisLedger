@@ -43,6 +43,7 @@ dev = [
 [project.scripts]
 aegisledger = "aegisledger.cli:main"
 aegisledger-evaluate = "agentwallet.eval.harness:main"
+aegisledger-experiment = "aegisledger.evaluation:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/aegisledger", "src/agentwallet"]

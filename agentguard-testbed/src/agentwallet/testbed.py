@@ -15,17 +15,19 @@ import itertools
 from dataclasses import dataclass, field
 from enum import Enum
 
-from .chain.ledger import LocalChain, MICRO
+from aegisledger.tools import McpServer, McpToolResultV1, ToolSandbox
+
+from .agents.base import Sanitizer
+from .agents.executor_agent import ExecutorAgent
+from .agents.language_agent import LanguageAgent
 from .chain.crypto import KeyPair
-from .guard.policy import load_policy, UNRESTRICTED
-from .guard.engine import PolicyEngine
+from .chain.ledger import MICRO, LocalChain
 from .guard.attestation import EnclaveAttestor
+from .guard.engine import PolicyEngine
 from .guard.guard import AgentGuard, GuardClient
+from .guard.policy import UNRESTRICTED, load_policy
 from .wallet.signer import IsolatedSigner
 from .wallet.smart_wallet import ContractWalletRules, deploy_contract_wallet
-from .agents.base import Sanitizer
-from .agents.language_agent import LanguageAgent
-from .agents.executor_agent import ExecutorAgent
 
 
 class DefenseMode(Enum):
@@ -70,6 +72,8 @@ _tick = itertools.count(1_700_000_000)
 
 @dataclass
 class Testbed:
+    __test__ = False
+
     mode: DefenseMode
     seed: str = "run"
     amm_a: int = 1_000_000 * MICRO
@@ -80,6 +84,7 @@ class Testbed:
     client: GuardClient = field(init=False)
     executor: ExecutorAgent = field(init=False)
     language: LanguageAgent = field(init=False)
+    tool_sandbox: ToolSandbox = field(init=False, repr=False)
     attacker: str = field(init=False)
     attacker_keys: KeyPair = field(init=False, repr=False)
     _host_signer: IsolatedSigner = field(init=False, repr=False)
@@ -87,7 +92,10 @@ class Testbed:
 
     def __post_init__(self):
         self.clock = next(_tick)
-        now = lambda: self.clock
+
+        def now() -> int:
+            return self.clock
+
         self.chain = LocalChain(amm_a=self.amm_a, amm_b=self.amm_b)
 
         # Vendor identities are derived first: strict policies allowlist them.
@@ -132,6 +140,10 @@ class Testbed:
                                               DefenseMode.GUARD_FULL))
         self.language = LanguageAgent(sanitizer=san, attacker_address=self.attacker)
         self.executor = ExecutorAgent(name="executor", client=self.client)
+        self.tool_sandbox = ToolSandbox(
+            dlp_enabled=self.mode
+            in (DefenseMode.GUARD_STRICT, DefenseMode.GUARD_FULL, DefenseMode.GUARD_MEV)
+        )
 
         # --- funded parties ---
         self.chain.mint("TUSDC", self.wallet, 10_000 * MICRO)
@@ -158,3 +170,12 @@ class Testbed:
 
     def balance(self, addr: str, asset: str = "TUSDC") -> int:
         return self.chain.balance(asset, addr)
+
+    def invoke_tool(
+        self,
+        server: McpServer,
+        tool_name: str,
+        arguments: dict[str, object],
+    ) -> McpToolResultV1:
+        """Route every tool invocation through the argument-validation boundary."""
+        return self.tool_sandbox.invoke(server, tool_name, arguments)

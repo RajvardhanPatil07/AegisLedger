@@ -81,6 +81,13 @@ class ProposalV1(StrictModel):
     def normalize_wallet(cls, value: str) -> str:
         return value.lower()
 
+    @field_validator("deadline", mode="before")
+    @classmethod
+    def parse_iso_deadline(cls, value):
+        if isinstance(value, str):
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return value
+
     @field_validator("deadline")
     @classmethod
     def require_utc(cls, value: datetime) -> datetime:
@@ -121,6 +128,13 @@ class DecisionTokenV1(StrictModel):
     decision_nonce: uuid.UUID = Field(default_factory=uuid7)
     policy_signer: Annotated[str, StringConstraints(min_length=1, max_length=256)]
     signature: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{128}$")]
+
+    @field_validator("reason_codes", mode="before")
+    @classmethod
+    def accept_reason_array(cls, value):
+        if not isinstance(value, (list, tuple)):
+            raise TypeError("reason_codes must be an array")
+        return tuple(value)
 
     @field_validator("expires_at")
     @classmethod
@@ -174,4 +188,3 @@ _ALLOWED_TRANSITIONS = {
 def require_transition(current: LifecycleState, target: LifecycleState) -> None:
     if target not in _ALLOWED_TRANSITIONS.get(current, set()):
         raise ValueError(f"invalid lifecycle transition: {current.value} -> {target.value}")
-

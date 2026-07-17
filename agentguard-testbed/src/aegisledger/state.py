@@ -105,6 +105,10 @@ class MemoryStateStore:
             self._idempotency[key] = proposal.proposal_id
             return ReservationResult(record, created=True)
 
+    def simulate(self, proposal: ProposalV1, policy: PolicyV1) -> tuple[str, ...]:
+        with self._lock:
+            return tuple(self._evaluate(proposal, policy))
+
     def _evaluate(self, proposal: ProposalV1, policy: PolicyV1) -> list[str]:
         reasons: list[str] = []
         if policy.emergency_stop:
@@ -209,4 +213,3 @@ class MemoryStateStore:
             pending = sum(item.amount for item in matching if item.active)
             settled = sum(item.amount for item in matching if item.settled)
             return pending, settled
-

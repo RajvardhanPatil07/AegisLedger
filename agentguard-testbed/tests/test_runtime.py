@@ -74,11 +74,69 @@ def test_compose_uses_published_opentelemetry_collector_image():
 
 def test_all_third_party_runtime_images_are_digest_pinned():
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
-    built_services = {"api", "web", "signer", "experiment-data-init"}
+    built_services = {
+        "api",
+        "web",
+        "signer",
+        "experiment-data-init",
+        "runtime-secrets-init",
+    }
 
     for name, service in compose["services"].items():
         if name not in built_services:
             assert "@sha256:" in service["image"], f"{name} must use an immutable image digest"
+
+
+def test_compose_stages_file_backed_secrets_for_nonroot_services():
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    services = compose["services"]
+    initializer = services["runtime-secrets-init"]
+
+    assert initializer["user"] == "0:0"
+    assert initializer["read_only"] is True
+    assert "no-new-privileges:true" in initializer["security_opt"]
+    assert initializer["entrypoint"] == ["stage-runtime-secrets"]
+    assert set(initializer["volumes"]) == {
+        "signer-runtime-secrets:/var/lib/aegisledger-secrets/signer",
+        "api-runtime-secrets:/var/lib/aegisledger-secrets/api",
+    }
+    assert initializer["secrets"] == [
+        {
+            "source": "signer-private-key",
+            "target": "/run/source/signer-private-key",
+        },
+        {
+            "source": "signer-tls-key",
+            "target": "/run/source/signer-tls-key",
+        },
+        {
+            "source": "api-client-tls-key",
+            "target": "/run/source/api-client-tls-key",
+        },
+    ]
+
+    for service_name, volume in {
+        "signer": "signer-runtime-secrets:/run/secrets:ro",
+        "api": "api-runtime-secrets:/run/secrets:ro",
+    }.items():
+        service = services[service_name]
+        assert "secrets" not in service
+        assert volume in service["volumes"]
+        assert service["depends_on"]["runtime-secrets-init"] == {
+            "condition": "service_completed_successfully"
+        }
+
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    stage_script = (ROOT / "scripts" / "stage_runtime_secrets.sh").read_text(
+        encoding="utf-8"
+    )
+    assert (
+        "COPY scripts/stage_runtime_secrets.sh /usr/local/bin/stage-runtime-secrets"
+        in dockerfile
+    )
+    assert "chmod 0400" in stage_script
+    assert "65532 65532" in stage_script
+    assert "10001 10001" in stage_script
 
 
 def test_runtime_smoke_is_shipped_in_api_image():

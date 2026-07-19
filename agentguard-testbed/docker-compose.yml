@@ -57,6 +57,27 @@ services:
       - "127.0.0.1:8545:8545"
     restart: unless-stopped
 
+  runtime-secrets-init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    user: "0:0"
+    entrypoint: ["stage-runtime-secrets"]
+    volumes:
+      - signer-runtime-secrets:/var/lib/aegisledger-secrets/signer
+      - api-runtime-secrets:/var/lib/aegisledger-secrets/api
+    secrets:
+      - source: signer-private-key
+        target: /run/source/signer-private-key
+      - source: signer-tls-key
+        target: /run/source/signer-tls-key
+      - source: api-client-tls-key
+        target: /run/source/api-client-tls-key
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
   signer:
     build:
       context: .
@@ -77,13 +98,15 @@ services:
       AEGIS_CLIENT_CA: /run/tls/ca.pem
       RUST_LOG: info
     volumes:
-      - ./artifacts/dev-certs:/run/tls:ro
+      - ./artifacts/dev-certs/signer.pem:/run/tls/signer.pem:ro
+      - ./artifacts/dev-certs/ca.pem:/run/tls/ca.pem:ro
+      - signer-runtime-secrets:/run/secrets:ro
       - signer-state:/var/lib/aegisledger
-    secrets:
-      - signer-private-key
-      - signer-tls-key
     expose:
       - "50051"
+    depends_on:
+      runtime-secrets-init:
+        condition: service_completed_successfully
     read_only: true
     tmpfs:
       - /tmp:noexec,nosuid,size=16m
@@ -138,10 +161,10 @@ services:
       AEGIS_REQUEST_MAX_BYTES: "1000000"
     volumes:
       - experiment-data:/app/artifacts/experiments
-      - ./artifacts/dev-certs:/run/tls:ro
+      - ./artifacts/dev-certs/api-client.pem:/run/tls/api-client.pem:ro
+      - ./artifacts/dev-certs/ca.pem:/run/tls/ca.pem:ro
       - ./artifacts/dev-policy:/run/config:ro
-    secrets:
-      - api-client-tls-key
+      - api-runtime-secrets:/run/secrets:ro
     ports:
       - "127.0.0.1:${AEGIS_API_PORT:-8000}:8000"
     depends_on:
@@ -153,6 +176,8 @@ services:
         condition: service_started
       signer:
         condition: service_started
+      runtime-secrets-init:
+        condition: service_completed_successfully
       anvil:
         condition: service_started
       experiment-data-init:
@@ -232,6 +257,8 @@ volumes:
   postgres-data:
   signer-state:
   experiment-data:
+  signer-runtime-secrets:
+  api-runtime-secrets:
   prometheus-data:
   grafana-data:
 

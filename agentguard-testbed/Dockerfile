@@ -18,11 +18,12 @@ COPY migrations ./migrations
 COPY alembic.ini ./
 COPY configs ./configs
 COPY scripts/api_entrypoint.sh /usr/local/bin/api-entrypoint
+COPY scripts/stage_runtime_secrets.sh /usr/local/bin/stage-runtime-secrets
 COPY scripts/runtime_smoke.py /app/scripts/runtime_smoke.py
 
 RUN uv sync --frozen --no-dev --no-editable \
     && chown -R aegis:aegis /app \
-    && chmod 0555 /usr/local/bin/api-entrypoint
+    && chmod 0555 /usr/local/bin/api-entrypoint /usr/local/bin/stage-runtime-secrets
 
 USER aegis:aegis
 EXPOSE 8000

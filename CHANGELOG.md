@@ -7,6 +7,8 @@ Semantic Versioning while its public contracts stabilize.
 
 ### Security
 
+- Stage file-backed Compose secrets into service-owned, mode-`0400` volumes so
+  non-root API and signer processes can start without weakening host key permissions.
 - Bound serialized EIP-1559 bytes exactly to authorized transaction fields in
   the deployed Rust signer, with stable identity and replay state.
 - Added smart-account reentrancy protection and a malicious-target regression.

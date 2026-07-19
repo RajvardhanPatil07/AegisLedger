@@ -1,0 +1,165 @@
+name: Security
+
+on:
+  push:
+    branches: [main, "feature/**"]
+  pull_request:
+  schedule:
+    - cron: "17 3 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: agentguard-testbed
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-and-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.29"
+          python-version: "3.13"
+          enable-cache: true
+          working-directory: agentguard-testbed
+      - run: uv sync --all-extras --frozen
+      - name: Bandit high and medium findings
+        run: uv run bandit -q -r src -ll
+      - name: Python dependency audit
+        run: uv run pip-audit --skip-editable
+      - name: Secret history scan
+        run: |
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/repo" \
+            ghcr.io/gitleaks/gitleaks@sha256:aa036a2f4bdfe3cc3c55fa4326308efabb4a6be498c883c864fd1d0d5585438a \
+            git /repo --redact --no-banner
+
+  rust-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup override set 1.97.1
+      - name: Install pinned audit tools
+        run: |
+          cargo install cargo-audit --locked --version 0.22.2
+          cargo install cargo-deny --locked --version 0.20.2
+      - run: cargo audit --file signer/Cargo.lock
+      - run: cargo deny --manifest-path signer/Cargo.toml check
+
+  solidity-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@b00af27efadbc7b4ca8b82abbd903b17cc874d2a # v1
+        with:
+          version: v1.7.1
+          cache: true
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.29"
+          python-version: "3.13"
+      - name: Slither static analysis
+        run: >-
+          uvx --from slither-analyzer==0.11.5 slither .
+          --filter-paths "contracts/test|contracts/cache|lib"
+          --exclude-low
+          --exclude-informational
+          --exclude-optimization
+
+  container-images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Build API with provenance
+        run: |
+          mkdir -p artifacts
+          docker buildx build --load --provenance=mode=max \
+            --metadata-file artifacts/aegisledger-api.provenance.json \
+            --tag aegisledger-api:ci .
+      - name: Build signer with provenance
+        run: |
+          docker buildx build --load --provenance=mode=max \
+            --metadata-file artifacts/aegisledger-signer.provenance.json \
+            --file signer/Dockerfile --tag aegisledger-signer:ci .
+      - name: Build console with provenance
+        run: |
+          docker buildx build --load --provenance=mode=max \
+            --metadata-file artifacts/aegisledger-console.provenance.json \
+            --tag aegisledger-console:ci web
+      - name: Scan API image
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: aegisledger-api:ci
+          format: table
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+      - name: Scan signer image
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: aegisledger-signer:ci
+          format: table
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+      - name: Scan console image
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: aegisledger-console:ci
+          format: table
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+      - name: Generate API CycloneDX SBOM
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: aegisledger-api:ci
+          format: cyclonedx
+          output: artifacts/aegisledger-api.cdx.json
+      - name: Generate signer CycloneDX SBOM
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: aegisledger-signer:ci
+          format: cyclonedx
+          output: artifacts/aegisledger-signer.cdx.json
+      - name: Generate console CycloneDX SBOM
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: aegisledger-console:ci
+          format: cyclonedx
+          output: artifacts/aegisledger-console.cdx.json
+      - name: Bind SBOM and provenance evidence to exact commit
+        run: >-
+          python3 scripts/release_evidence.py build
+          --output "$GITHUB_WORKSPACE/agentguard-testbed/artifacts/image-evidence.json"
+          --artifact "$GITHUB_WORKSPACE/agentguard-testbed/artifacts"
+      - name: Upload image SBOMs and provenance metadata
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-sboms
+          path: |
+            agentguard-testbed/artifacts/*.cdx.json
+            agentguard-testbed/artifacts/*.provenance.json
+            agentguard-testbed/artifacts/image-evidence.json
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "memory_mib": 1024,
+  "cpu_count": 2,
+  "enclave_cid": 16,
+  "vsock_port": 50051,
+  "pcr_allowlist": {
+    "PCR0": "replace-with-reproducible-image-measurement",
+    "PCR1": "replace-with-kernel-measurement",
+    "PCR2": "replace-with-application-measurement"
+  }
+}
+

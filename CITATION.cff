@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use AegisLedger in research, please cite this software."
+title: "AegisLedger: Security and Economics for Money-Holding AI Agents"
+type: software
+authors:
+  - family-names: Patil
+    given-names: Rajvardhan
+repository-code: "https://github.com/RajvardhanPatil07/AegisLedger"
+url: "https://github.com/RajvardhanPatil07/AegisLedger"
+license: Apache-2.0
+version: 0.3.0
+keywords:
+  - autonomous agents
+  - wallet security
+  - policy enforcement
+  - smart accounts
+  - MEV

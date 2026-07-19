@@ -21,6 +21,7 @@ Schema (all amounts integer micro-USDC):
 Unknown keys, negative amounts, or malformed values raise PolicyError at load
 time (fail-closed: a broken policy never silently becomes permissive).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -69,9 +70,16 @@ class Policy:
 
 
 _ALLOWED_KEYS = {
-    "name", "per_tx_cap", "window_caps", "velocity", "allowed_assets",
-    "allowlist_recipients", "blocklist_recipients", "require_mandate_above",
-    "risk", "kill_switch",
+    "name",
+    "per_tx_cap",
+    "window_caps",
+    "velocity",
+    "allowed_assets",
+    "allowlist_recipients",
+    "blocklist_recipients",
+    "require_mandate_above",
+    "risk",
+    "kill_switch",
 }
 
 
@@ -81,6 +89,25 @@ def _need_int(v, what: str) -> int:
     if v < 0:
         raise PolicyError(f"{what} must be >= 0")
     return v
+
+
+def _need_positive_int(v, what: str) -> int:
+    value = _need_int(v, what)
+    if value == 0:
+        raise PolicyError(f"{what} must be > 0")
+    return value
+
+
+def _need_bool(v, what: str) -> bool:
+    if not isinstance(v, bool):
+        raise PolicyError(f"{what} must be a boolean, got {type(v).__name__}")
+    return v
+
+
+def _reject_unknown(data: dict, allowed: set[str], what: str) -> None:
+    unknown = set(data) - allowed
+    if unknown:
+        raise PolicyError(f"unknown {what} keys: {sorted(unknown)}")
 
 
 def _need_str_list(v, what: str) -> list[str]:
@@ -111,26 +138,37 @@ def load_policy(text: str) -> Policy:
     for i, wc in enumerate(data.get("window_caps", []) or []):
         if not isinstance(wc, dict):
             raise PolicyError(f"window_caps[{i}] must be a mapping")
-        window_caps.append(WindowCap(
-            window_s=_need_int(wc.get("window_s", 0), f"window_caps[{i}].window_s"),
-            cap=_need_int(wc.get("cap", 0), f"window_caps[{i}].cap"),
-        ))
+        _reject_unknown(wc, {"window_s", "cap"}, f"window_caps[{i}]")
+        window_caps.append(
+            WindowCap(
+                window_s=_need_positive_int(wc.get("window_s", 0), f"window_caps[{i}].window_s"),
+                cap=_need_int(wc.get("cap", 0), f"window_caps[{i}].cap"),
+            )
+        )
 
     vel = data.get("velocity", {}) or {}
     if not isinstance(vel, dict):
         raise PolicyError("velocity must be a mapping")
+    _reject_unknown(vel, {"max_tx_per_window", "window_s"}, "velocity")
     max_tx = _need_int(vel.get("max_tx_per_window", 0), "velocity.max_tx_per_window")
-    vel_win = _need_int(vel.get("window_s", 3600), "velocity.window_s")
+    vel_win = _need_positive_int(vel.get("window_s", 3600), "velocity.window_s")
 
     risk_d = data.get("risk", {}) or {}
     if not isinstance(risk_d, dict):
         raise PolicyError("risk must be a mapping")
+    _reject_unknown(
+        risk_d,
+        {"dynamic_tightening", "pool_move_threshold_bps", "max_slippage_bps"},
+        "risk",
+    )
     risk = RiskPolicy(
-        dynamic_tightening=bool(risk_d.get("dynamic_tightening", False)),
-        pool_move_threshold_bps=_need_int(risk_d.get("pool_move_threshold_bps", 100),
-                                          "risk.pool_move_threshold_bps"),
-        max_slippage_bps=_need_int(risk_d.get("max_slippage_bps", 100),
-                                   "risk.max_slippage_bps"),
+        dynamic_tightening=_need_bool(
+            risk_d.get("dynamic_tightening", False), "risk.dynamic_tightening"
+        ),
+        pool_move_threshold_bps=_need_int(
+            risk_d.get("pool_move_threshold_bps", 100), "risk.pool_move_threshold_bps"
+        ),
+        max_slippage_bps=_need_int(risk_d.get("max_slippage_bps", 100), "risk.max_slippage_bps"),
     )
 
     return Policy(
@@ -140,14 +178,17 @@ def load_policy(text: str) -> Policy:
         max_tx_per_window=max_tx,
         velocity_window_s=vel_win,
         allowed_assets=_need_str_list(data.get("allowed_assets", ["TUSDC"]), "allowed_assets"),
-        allowlist_recipients=_need_str_list(data.get("allowlist_recipients", []),
-                                            "allowlist_recipients"),
-        blocklist_recipients=_need_str_list(data.get("blocklist_recipients", []),
-                                            "blocklist_recipients"),
-        require_mandate_above=_need_int(data.get("require_mandate_above", 2**63 - 1),
-                                        "require_mandate_above"),
+        allowlist_recipients=_need_str_list(
+            data.get("allowlist_recipients", []), "allowlist_recipients"
+        ),
+        blocklist_recipients=_need_str_list(
+            data.get("blocklist_recipients", []), "blocklist_recipients"
+        ),
+        require_mandate_above=_need_int(
+            data.get("require_mandate_above", 2**63 - 1), "require_mandate_above"
+        ),
         risk=risk,
-        kill_switch=bool(data.get("kill_switch", False)),
+        kill_switch=_need_bool(data.get("kill_switch", False), "kill_switch"),
         raw=data,
     )
 

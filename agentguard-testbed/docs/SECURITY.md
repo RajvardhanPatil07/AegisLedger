@@ -1,53 +1,104 @@
-# Security Notes — Self-Check Results
+# Security posture
 
-## Static analysis
+This document describes the implemented reference deployment. It is not an
+independent audit report and must not be presented as one. The authoritative
+claim inventory is [SECURITY_CLAIMS.md](SECURITY_CLAIMS.md).
 
-`bandit -r src/` — **0 high, 0 medium** severity findings. 8 low findings, all
-false positives or accepted design:
+## Trust boundaries
 
-| Finding | Verdict |
-|---|---|
-| `hardcoded_password: 'TUSDC'/'DRB'` (x6) | False positive — token ticker symbols, not secrets. |
-| `assert_used` (x2, `ConstantProductAMM.__init__`) | Accepted — constructor invariant checks in a testbed; not reachable with attacker-controlled input. |
+The agent, model output, tools, peer messages, counterparties, and public chain
+data are untrusted. They can propose an operation but never receive signing
+material or a signer-capable object. The API constructs the transaction from
+the retained proposal and fee/nonce inputs; the Rust signer treats the API
+request as untrusted and independently validates the complete authorization.
 
-## Trust-boundary review (manual)
+The local reference separates these authorities:
 
-- **Key custody:** wallet key material exists only inside `IsolatedSigner`; the
-  attestation key only inside `EnclaveAttestor`. Neither is reachable from the
-  agent-facing `GuardClient` (submit-only; verified by
-  `test_agent_handle_is_submit_only`).
-- **Fail-closed parsing:** unknown keys, negative amounts, booleans-as-integers,
-  and malformed YAML all raise `PolicyError` at load — a broken policy can
-  never silently become permissive (tested).
-- **Deny means no settlement:** engine deny → no mempool submission (tested).
-- **Bypass attempt:** direct-to-mempool submission in contract-wallet config is
-  reverted by settlement-time rules for over-cap transfers (tested).
-- **Replay:** facilitator nonces are single-use (tested).
-- **Tamper evidence:** attestation field mutation invalidates verification;
-  audit-log mutation breaks the hash chain (both tested).
-- **Determinism:** all keys derived from seeds; all clocks injectable; the
-  evaluation matrix is exactly reproducible.
+1. Keycloak authenticates the human/API principal and supplies roles.
+2. PostgreSQL owns proposal, policy, reservation, decision, transaction,
+   settlement, attestation, audit, experiment, and rate-limit state.
+3. The Python API evaluates policy and orchestrates lifecycle transitions.
+4. The Rust signer owns the secp256k1 key and its replay state, reachable only
+   over mutual TLS.
+5. The EVM verifies the signed raw transaction and produces settlement evidence.
+6. Offline verification recomputes hashes and validates signatures without
+   consulting mutable service state.
 
-## Ethical posture
+## Signer authorization boundary
 
-- Entirely local, simulated assets; no live networks, platforms, or third-party
-  agents are touched at any point.
-- Adversarial tools and payloads exist to measure defenses and are documented
-  as such; they target only the testbed's own agents.
-- Where this work models real incidents (Morse-encoded injection, inbound-asset
-  privilege grants, tool poisoning), it reimplements the *mechanics* against
-  synthetic wallets — no victim infrastructure is involved.
+The signer accepts only an `aegisledger.sign_request.v1` object. Unknown fields
+are denied. It verifies the policy decision signature, signer identity, active
+reservation, proposal hash, policy hash allowlist, decision and request expiry,
+chain allowlist, wallet binding, replay state, and monotonic wallet nonce.
 
-## Known blind spots (disclosed, not hidden)
+For EIP-1559, it decodes the supplied unsigned typed transaction and compares
+every security-relevant field with the authorized transaction binding. It
+rejects non-canonical RLP and derives the signing hash internally. A successful
+response contains the complete signed raw transaction; the API recomputes the
+network transaction hash before accepting the response.
 
-1. **Tool-argument exfiltration** (class II-c): policy engines govern money
-   movement, not data flow inside tool calls. Mitigation requires a separate
-   information-flow control layer (e.g., CaMeL-style provenance) — noted as
-   future work.
-2. **Availability cost of MEV-aware cancellation:** when the guard cancels a
-   sandwiched swap, the legitimate swap does not execute in that block; the
-   private-relay configuration avoids this cost by removing the information
-   leak instead.
-3. **Per-tx caps bound, not prevent:** under-cap theft passes cap-only
-   configurations (contract-wallet results) — caps must be composed with
-   recipient allowlists and mandate requirements.
+## Durable lifecycle
+
+Proposal states are monotonic. An ALLOW result creates a reservation and signed
+decision. Signing persists a single execution per proposal; `(wallet, chain,
+nonce)`, decision nonce, EIP-712 hash, signing hash, and transaction hash are
+unique. Submission is idempotent. Reconciliation retains canonical receipt
+observations, marks pre-finality reorgs non-canonical, and closes the reservation
+only after the configured confirmation threshold.
+
+The signer and PostgreSQL are separate durability domains. The workflow
+persists intent before signing and makes retries idempotent, but it is not a
+distributed transaction. An interruption after the signer consumes a decision
+and before PostgreSQL stores the signed result requires operator reconciliation;
+the signer remains fail-closed rather than re-signing.
+
+## Complete attestation
+
+The retained attestation binds the original proposal, policy decision, exact
+transaction fields, signing hash, raw signed bytes, network transaction hash,
+signer identity, software measurement, signature, and canonical settlement
+receipt. The verifier checks the policy signature, signer evidence signature,
+transaction hashes, all cross-object bindings, measurement allowlist, chain,
+and final lifecycle consistency.
+
+Local `local-compose-v1` evidence is software evidence. It does not establish
+hardware isolation or remote-attestation trust.
+
+## Service controls
+
+- OIDC audience/issuer/JWKS verification, role checks, and proposal ownership.
+- ASGI-layer streaming body cap even when `Content-Length` is absent or false.
+- Durable per-principal fixed-window rate limits and active experiment quotas.
+- Append-only, PostgreSQL-trigger-protected hash-chained audit events.
+- Loopback-only published ports, read-only containers, non-root UIDs,
+  `no-new-privileges`, bounded tmpfs, and mTLS signer traffic.
+- Readiness checks cover database-backed stores, active policy, and signer
+  identity; graceful shutdown closes signer and RPC clients.
+
+## Supply-chain controls
+
+GitHub Actions and third-party actions are pinned to full commit SHAs. All
+third-party Compose images and Dockerfile bases are pinned by digest. CI runs
+CodeQL, Bandit, `pip-audit`, `cargo-audit`, `cargo-deny`, Slither, Gitleaks, and
+Trivy, and uploads image SBOM and Python coverage artifacts. BuildKit-generated
+container provenance is retained by the release process.
+
+Two RustSec entries are explicitly acknowledged in `deny.toml`: both describe
+unmaintained transitive crates with no reported vulnerability and no safe
+upgrade. They remain visible by ID and must be revisited on dependency updates.
+
+## Residual risks
+
+- Development keys and certificates are local files, not managed custody.
+- Keycloak uses development mode and PostgreSQL is a single node without TLS.
+- A compromised host can deny service or withhold transactions and evidence.
+- Policy controls money movement, not arbitrary data exfiltration through tool
+  arguments.
+- MEV protection in the deterministic research track does not prove safety on a
+  live chain.
+- Audit chaining detects mutation but external root anchoring is not automatic
+  in the Compose profile.
+- The project has not completed an independent security assessment.
+
+Report vulnerabilities using the private process in the repository-level
+`.github/SECURITY.md`; do not open a public issue for a suspected vulnerability.

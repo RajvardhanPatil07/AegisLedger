@@ -1,10 +1,11 @@
 """Attestation integrity: verification succeeds for genuine attestations and
 fails for any tampering — the core assurance property."""
+
 import dataclasses
 
 from agentwallet.guard.attestation import EnclaveAttestor, verify_attestation
-from agentwallet.guard.policy import load_policy
 from agentwallet.guard.engine import Proposal
+from agentwallet.guard.policy import load_policy
 
 
 def make():

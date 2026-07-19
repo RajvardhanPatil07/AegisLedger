@@ -1,14 +1,20 @@
 """x402 flow: honest payments settle; forged, replayed, expired, and
 guard-denied authorizations fail."""
-from agentwallet.testbed import Testbed, DefenseMode
-from agentwallet.payments.x402 import X402Client, Facilitator, ResourceServer
+
+from agentwallet.payments.x402 import Facilitator, ResourceServer, X402Client
+from agentwallet.testbed import DefenseMode, Testbed
 
 
 def setup(mode=DefenseMode.GUARD_STRICT, evil=False):
     tb = Testbed(mode=mode, seed="x402-test")
-    server = ResourceServer(address=tb.vendors["data-api"], price=2_000_000,
-                            resource="r1", evil=evil, attacker_address=tb.attacker,
-                            now=lambda: tb.clock)
+    server = ResourceServer(
+        address=tb.vendors["data-api"],
+        price=2_000_000,
+        resource="r1",
+        evil=evil,
+        attacker_address=tb.attacker,
+        now=lambda: tb.clock,
+    )
     client = X402Client(payer=tb.wallet, sign_fn=tb.guard.sign_for_x402)
     fac = Facilitator(tb.chain, now=lambda: tb.clock)
     return tb, server, client, fac

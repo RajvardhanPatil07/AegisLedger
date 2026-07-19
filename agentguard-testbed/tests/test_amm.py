@@ -1,7 +1,8 @@
 """AMM arithmetic: constant-product invariant, price impact, min_out revert."""
+
 import pytest
 
-from agentwallet.chain.ledger import ConstantProductAMM, RuleViolation, MICRO
+from agentwallet.chain.ledger import MICRO, ConstantProductAMM, RuleViolation
 
 
 def test_quote_positive_and_increasing():

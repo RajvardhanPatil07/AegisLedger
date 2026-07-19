@@ -1,0 +1,24 @@
+{
+  "schema_version": "aegisledger.policy.v1",
+  "name": "development-research-policy",
+  "default_action": "deny",
+  "enabled_wallets": ["0x1212121212121212121212121212121212121212"],
+  "enabled_principals": ["00000000-0000-4000-8000-000000000101"],
+  "enabled_chains": [31337],
+  "enabled_assets": ["NATIVE:31337", "TUSDC", "DRB"],
+  "allowed_recipients": ["0x3434343434343434343434343434343434343434"],
+  "contract_rules": [],
+  "per_transaction_cap": 250000000,
+  "rolling_caps": [
+    {"window_seconds": 3600, "amount": 800000000},
+    {"window_seconds": 86400, "amount": 1000000000}
+  ],
+  "maximum_transactions_per_hour": 10,
+  "mandate_required_above": 100000000,
+  "risk": {
+    "maximum_slippage_bps": 50,
+    "maximum_quote_age_seconds": 30,
+    "deny_on_missing_quote": true
+  },
+  "emergency_stop": false
+}

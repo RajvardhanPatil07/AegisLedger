@@ -1,0 +1,34 @@
+name: Bug report
+description: Report reproducible incorrect behavior that is not security-sensitive
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "For vulnerabilities, use private reporting described in .github/SECURITY.md."
+  - type: input
+    id: commit
+    attributes:
+      label: Affected commit
+      placeholder: 40-character commit SHA
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Local reproduction
+      description: Provide the smallest safe reproduction using simulated assets only.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true

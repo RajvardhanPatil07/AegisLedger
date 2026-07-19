@@ -1,0 +1,137 @@
+{
+  "realm": "aegisledger",
+  "enabled": true,
+  "displayName": "AegisLedger Local Research",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": true,
+  "bruteForceProtected": true,
+  "roles": {
+    "realm": [
+      {"name": "viewer"},
+      {"name": "researcher"},
+      {"name": "policy_admin"},
+      {"name": "auditor"}
+    ]
+  },
+  "clientScopes": [
+    {
+      "name": "aegisledger-api-audience",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "aegisledger-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "aegisledger-api",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "aegisledger-console",
+      "name": "AegisLedger Console",
+      "protocol": "openid-connect",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:4173/*", "http://localhost:5173/*"],
+      "webOrigins": ["http://localhost:4173", "http://localhost:5173"],
+      "defaultClientScopes": ["aegisledger-api-audience"],
+      "protocolMappers": [
+        {
+          "name": "subject",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-sub-mapper",
+          "consentRequired": false,
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "true"
+          }
+        },
+        {
+          "name": "realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "false",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String",
+            "multivalued": "true"
+          }
+        },
+        {
+          "name": "preferred-username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "username",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "false",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "username": "researcher",
+      "email": "researcher@aegisledger.test",
+      "firstName": "Research",
+      "lastName": "Operator",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{"type": "password", "value": "${DEV_RESEARCHER_PASSWORD}", "temporary": false}],
+      "realmRoles": ["viewer", "researcher"]
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000102",
+      "username": "policy-admin-a",
+      "email": "policy-admin-a@aegisledger.test",
+      "firstName": "Policy",
+      "lastName": "Administrator A",
+      "enabled": true,
+      "emailVerified": true,
+      "requiredActions": ["CONFIGURE_TOTP"],
+      "credentials": [{"type": "password", "value": "${DEV_POLICY_ADMIN_A_PASSWORD}", "temporary": false}],
+      "realmRoles": ["viewer", "policy_admin"]
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000103",
+      "username": "policy-admin-b",
+      "email": "policy-admin-b@aegisledger.test",
+      "firstName": "Policy",
+      "lastName": "Administrator B",
+      "enabled": true,
+      "emailVerified": true,
+      "requiredActions": ["CONFIGURE_TOTP"],
+      "credentials": [{"type": "password", "value": "${DEV_POLICY_ADMIN_B_PASSWORD}", "temporary": false}],
+      "realmRoles": ["viewer", "policy_admin"]
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000104",
+      "username": "auditor",
+      "email": "auditor@aegisledger.test",
+      "firstName": "Evidence",
+      "lastName": "Auditor",
+      "enabled": true,
+      "emailVerified": true,
+      "requiredActions": ["CONFIGURE_TOTP"],
+      "credentials": [{"type": "password", "value": "${DEV_AUDITOR_PASSWORD}", "temporary": false}],
+      "realmRoles": ["viewer", "auditor"]
+    }
+  ]
+}

@@ -1,0 +1,183 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feature/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: agentguard-testbed
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.29"
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          working-directory: agentguard-testbed
+      - run: uv sync --all-extras --frozen
+      - name: Validate candidate release metadata
+        run: uv run python scripts/check_release_metadata.py --mode candidate
+      - name: Validate assurance scorecard ownership and evidence
+        run: uv run python scripts/check_assurance_scorecard.py
+      - name: Validate source and asset provenance coverage
+        run: uv run python scripts/check_provenance_inventory.py
+      - run: uv run ruff check src tests migrations scripts
+      - run: uv run mypy
+      - name: Test with coverage gate
+        run: |
+          mkdir -p artifacts
+          if [[ "${{ matrix.python-version }}" == "3.13" ]]; then
+            uv run pytest -q \
+              --cov=aegisledger \
+              --cov=agentwallet \
+              --cov-report=term-missing:skip-covered \
+              --cov-report=xml:artifacts/coverage.xml \
+              --cov-fail-under=75 \
+              --junitxml=artifacts/junit-python-${{ matrix.python-version }}.xml
+          else
+            uv run pytest -q \
+              --junitxml=artifacts/junit-python-${{ matrix.python-version }}.xml
+          fi
+      - name: Bind Python evidence to exact commit
+        if: always()
+        run: |
+          evidence=(
+            --artifact "$GITHUB_WORKSPACE/agentguard-testbed/artifacts/junit-python-${{ matrix.python-version }}.xml"
+          )
+          if [[ -f artifacts/coverage.xml ]]; then
+            evidence+=(--artifact "$GITHUB_WORKSPACE/agentguard-testbed/artifacts/coverage.xml")
+          fi
+          uv run python scripts/release_evidence.py build \
+            --output "$GITHUB_WORKSPACE/agentguard-testbed/artifacts/python-${{ matrix.python-version }}-evidence.json" \
+            "${evidence[@]}"
+      - run: uv build
+      - name: Upload Python test report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: python-${{ matrix.python-version }}-test-report
+          path: |
+            agentguard-testbed/artifacts/junit-python-${{ matrix.python-version }}.xml
+            agentguard-testbed/artifacts/python-${{ matrix.python-version }}-evidence.json
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Upload Python coverage report
+        if: matrix.python-version == '3.13'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: python-coverage
+          path: |
+            agentguard-testbed/artifacts/coverage.xml
+            agentguard-testbed/artifacts/python-3.13-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
+  signer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal --component clippy,rustfmt
+          rustup override set 1.97.1
+      - run: cargo fmt --manifest-path signer/Cargo.toml --check
+      - run: cargo clippy --manifest-path signer/Cargo.toml --locked -- -D warnings
+      - run: cargo test --manifest-path signer/Cargo.toml --locked
+
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@b00af27efadbc7b4ca8b82abbd903b17cc874d2a # v1
+        with:
+          version: v1.7.1
+          cache: true
+      - run: forge fmt --check
+      - run: forge build --sizes
+      - run: forge test -vvv
+
+  formal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - run: scripts/check_formal.sh
+
+  evaluation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.29"
+          python-version: "3.13"
+          enable-cache: true
+          working-directory: agentguard-testbed
+      - run: uv sync --all-extras --frozen
+      - run: uv run aegisledger-experiment --seed ci-baseline --runs 3 --output-root artifacts/ci-experiments
+      - name: Bind evaluation evidence to exact commit
+        run: >-
+          uv run python scripts/release_evidence.py build
+          --output "$GITHUB_WORKSPACE/agentguard-testbed/artifacts/evaluation-evidence.json"
+          --artifact "$GITHUB_WORKSPACE/agentguard-testbed/artifacts/ci-experiments"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reproducible-evaluation
+          path: |
+            agentguard-testbed/artifacts/ci-experiments
+            agentguard-testbed/artifacts/evaluation-evidence.json
+          if-no-files-found: error
+          retention-days: 14
+
+  console:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24.17.0"
+          cache: npm
+          cache-dependency-path: agentguard-testbed/web/package-lock.json
+      - run: npm ci
+        working-directory: agentguard-testbed/web
+      - run: npm run typecheck
+        working-directory: agentguard-testbed/web
+      - run: npm test
+        working-directory: agentguard-testbed/web
+      - run: npm run build
+        working-directory: agentguard-testbed/web
+      - run: npx playwright install --with-deps chromium
+        working-directory: agentguard-testbed/web
+      - run: npm run test:e2e
+        working-directory: agentguard-testbed/web

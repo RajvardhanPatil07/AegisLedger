@@ -1,0 +1,244 @@
+name: aegisledger
+
+services:
+  postgres:
+    image: postgres:18.4-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./deploy/postgres/init-keycloak.sh:/docker-entrypoint-initdb.d/10-keycloak.sh:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.0@sha256:2eb3cd316835c990e69e26ade292ffa78f6fb0db7d5fc6377463c162e1979ac0
+    command: ["start-dev", "--import-realm", "--hostname=http://localhost:8080"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: ${POSTGRES_USER}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+      DEV_RESEARCHER_PASSWORD: ${DEV_RESEARCHER_PASSWORD}
+      DEV_POLICY_ADMIN_A_PASSWORD: ${DEV_POLICY_ADMIN_A_PASSWORD}
+      DEV_POLICY_ADMIN_B_PASSWORD: ${DEV_POLICY_ADMIN_B_PASSWORD}
+      DEV_AUDITOR_PASSWORD: ${DEV_AUDITOR_PASSWORD}
+    volumes:
+      - ./deploy/keycloak/aegisledger-realm.json:/opt/keycloak/data/import/aegisledger-realm.json:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:9000:9000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    restart: unless-stopped
+
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:v1.7.1@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd
+    entrypoint: ["anvil"]
+    command: ["--host", "0.0.0.0", "--chain-id", "31337", "--block-time", "1"]
+    ports:
+      - "127.0.0.1:8545:8545"
+    restart: unless-stopped
+
+  signer:
+    build:
+      context: .
+      dockerfile: signer/Dockerfile
+      args:
+        BUILD_MEASUREMENT: local-compose-v1
+    environment:
+      AEGIS_POLICY_PUBLIC_KEY_HEX: ${AEGIS_POLICY_PUBLIC_KEY_HEX}
+      AEGIS_ALLOWED_CHAIN_IDS: "31337"
+      AEGIS_ALLOWED_POLICY_HASHES: ${AEGIS_ALLOWED_POLICY_HASHES}
+      AEGIS_MANAGED_WALLETS: ${AEGIS_SIGNER_IDENTITY}
+      AEGIS_SIGNER_BUILD_MEASUREMENT: local-compose-v1
+      AEGIS_SIGNER_BIND: "0.0.0.0:50051"
+      AEGIS_SIGNER_PRIVATE_KEY_FILE: /run/secrets/signer-private-key
+      AEGIS_SIGNER_REPLAY_STATE_FILE: /var/lib/aegisledger/replay-state.json
+      AEGIS_TLS_CERT: /run/tls/signer.pem
+      AEGIS_TLS_KEY: /run/secrets/signer-tls-key
+      AEGIS_CLIENT_CA: /run/tls/ca.pem
+      RUST_LOG: info
+    volumes:
+      - ./artifacts/dev-certs:/run/tls:ro
+      - signer-state:/var/lib/aegisledger
+    secrets:
+      - signer-private-key
+      - signer-tls-key
+    expose:
+      - "50051"
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  experiment-data-init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["chown -R 10001:10001 /data"]
+    volumes:
+      - experiment-data:/data
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      AEGIS_ENVIRONMENT: development
+      AEGIS_STATE_BACKEND: postgres
+      AEGIS_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      AEGIS_POLICY_SIGNING_SEED: ${AEGIS_POLICY_SIGNING_SEED}
+      AEGIS_COMMIT_SHA: ${AEGIS_COMMIT_SHA}
+      AEGIS_BOOTSTRAP_DEVELOPMENT_POLICY: "true"
+      AEGIS_DEVELOPMENT_POLICY_PATH: /run/config/policy.dev.json
+      AEGIS_ALLOWED_BUILD_MEASUREMENTS: local-compose-v1
+      AEGIS_SIGNER_TARGET: signer:50051
+      AEGIS_SIGNER_CA_PATH: /run/tls/ca.pem
+      AEGIS_SIGNER_CLIENT_CERTIFICATE_PATH: /run/tls/api-client.pem
+      AEGIS_SIGNER_CLIENT_PRIVATE_KEY_PATH: /run/secrets/api-client-tls-key
+      AEGIS_RPC_URL: http://anvil:8545
+      AEGIS_RPC_CHAIN_ID: "31337"
+      AEGIS_FINALITY_CONFIRMATIONS: "2"
+      AEGIS_EIP712_DOMAIN_SEPARATOR: "0x1111111111111111111111111111111111111111111111111111111111111111"
+      AEGIS_OIDC_ISSUER: http://localhost:8080/realms/aegisledger
+      AEGIS_OIDC_AUDIENCE: aegisledger-api
+      AEGIS_OIDC_JWKS_URL: http://keycloak:8080/realms/aegisledger/protocol/openid-connect/certs
+      AEGIS_OTLP_ENDPOINT: http://otel-collector:4317
+      AEGIS_LOG_LEVEL: INFO
+      AEGIS_API_HOST: 0.0.0.0
+      AEGIS_EXPERIMENT_MAX_ACTIVE_PER_PRINCIPAL: "2"
+      AEGIS_RATE_LIMIT_REQUESTS: "120"
+      AEGIS_RATE_LIMIT_WINDOW_SECONDS: "60"
+      AEGIS_REQUEST_MAX_BYTES: "1000000"
+    volumes:
+      - experiment-data:/app/artifacts/experiments
+      - ./artifacts/dev-certs:/run/tls:ro
+      - ./artifacts/dev-policy:/run/config:ro
+    secrets:
+      - api-client-tls-key
+    ports:
+      - "127.0.0.1:${AEGIS_API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+      signer:
+        condition: service_started
+      anvil:
+        condition: service_started
+      experiment-data-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=32m
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        VITE_OIDC_ISSUER: http://localhost:8080/realms/aegisledger
+    ports:
+      - "127.0.0.1:${AEGIS_WEB_PORT:-4173}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  otel-collector:
+    image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.156.0@sha256:125bdbeb7590cc1952c5b3430ecf14063568980c2c93d5b38676cc0446ed8108
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./deploy/otel/collector.yaml:/etc/otelcol/config.yaml:ro
+    expose:
+      - "4317"
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=7d"]
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:12.0.2@sha256:b5b59bfc7561634c2d7b136c4543d702ebcc94a3da477f21ff26f89ffd4214fa
+    environment:
+      GF_SECURITY_ADMIN_USER: local-admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  signer-state:
+  experiment-data:
+  prometheus-data:
+  grafana-data:
+
+secrets:
+  signer-private-key:
+    file: ./artifacts/dev-signer/signer-private-key.hex
+  signer-tls-key:
+    file: ./artifacts/dev-certs/signer-key.pem
+  api-client-tls-key:
+    file: ./artifacts/dev-certs/api-client-key.pem

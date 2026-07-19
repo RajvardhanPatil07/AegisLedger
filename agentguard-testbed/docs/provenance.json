@@ -1,0 +1,166 @@
+{
+  "schema_version": "aegisledger.provenance.v1",
+  "owner": "repository-owner",
+  "last_reviewed": "2026-07-19",
+  "current_entries": [
+    {
+      "id": "SRC-001",
+      "title": "Repository governance and portfolio documentation",
+      "patterns": [
+        ".github/**",
+        ".gitignore",
+        ".gitleaks.toml",
+        "CHANGELOG.md",
+        "CITATION.cff",
+        "CONTRIBUTING.md",
+        "NOTICE",
+        "README.md",
+        "ROADMAP.md",
+        "tasks/**"
+      ],
+      "origin": "repository_authored",
+      "status": "owner_confirmation_required",
+      "copyright_holder": "Rajvardhan Patil (confirmation required)",
+      "license": "Apache-2.0 (subject to owner confirmation)",
+      "evidence": [
+        {
+          "uri": "NOTICE",
+          "label": "Current repository copyright notice"
+        },
+        {
+          "uri": "git+commit:1c4bd727a6c4cda2523cf9f09ce31a1d08432f34",
+          "label": "Initial repository commit"
+        }
+      ]
+    },
+    {
+      "id": "SRC-002",
+      "title": "Research manuscript",
+      "patterns": [
+        "Security-and-Economics-of-Money-Holding-AI-Agents.md"
+      ],
+      "origin": "repository_authored",
+      "status": "owner_confirmation_required",
+      "copyright_holder": "Rajvardhan Patil (confirmation required)",
+      "license": "Apache-2.0 (public-distribution scope requires confirmation)",
+      "evidence": [
+        {
+          "uri": "Security-and-Economics-of-Money-Holding-AI-Agents.md",
+          "label": "Current research manuscript"
+        },
+        {
+          "uri": "git+commit:1c4bd727a6c4cda2523cf9f09ce31a1d08432f34:Security-and-Economics-of-Money-Holding-AI-Agents.md",
+          "label": "Manuscript introduction in Git history"
+        }
+      ]
+    },
+    {
+      "id": "SRC-003",
+      "title": "Research figures",
+      "patterns": [
+        "assets/**"
+      ],
+      "origin": "generated",
+      "status": "owner_confirmation_required",
+      "copyright_holder": "To be confirmed by repository owner",
+      "license": "Not cleared for public distribution",
+      "evidence": [
+        {
+          "uri": "assets/fig1_timeline.png",
+          "label": "Timeline figure"
+        },
+        {
+          "uri": "assets/fig2_market.png",
+          "label": "Market figure"
+        },
+        {
+          "uri": "assets/fig3_sankey.png",
+          "label": "Sankey figure"
+        },
+        {
+          "uri": "assets/fig4_heatmap.png",
+          "label": "Heatmap figure"
+        },
+        {
+          "uri": "assets/fig5_venues.png",
+          "label": "Venue figure"
+        }
+      ]
+    },
+    {
+      "id": "SRC-004",
+      "title": "AegisLedger implementation, tests, operations, and release tooling",
+      "patterns": [
+        "agentguard-testbed/**"
+      ],
+      "origin": "repository_authored",
+      "status": "owner_confirmation_required",
+      "copyright_holder": "Rajvardhan Patil (confirmation required)",
+      "license": "Apache-2.0 (subject to owner confirmation and dependency licenses)",
+      "evidence": [
+        {
+          "uri": "NOTICE",
+          "label": "Current repository copyright notice"
+        },
+        {
+          "uri": "agentguard-testbed/README.md",
+          "label": "Implementation scope and dependency disclosures"
+        }
+      ]
+    },
+    {
+      "id": "SRC-005",
+      "title": "Apache License 2.0 text",
+      "patterns": [
+        "LICENSE"
+      ],
+      "origin": "third_party",
+      "status": "verified",
+      "copyright_holder": "Apache Software Foundation and license authors",
+      "license": "Apache-2.0",
+      "source_uri": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+      "evidence": [
+        {
+          "uri": "LICENSE",
+          "label": "Distributed Apache License 2.0 text"
+        }
+      ]
+    },
+    {
+      "id": "SRC-006",
+      "title": "Contributor Covenant Code of Conduct",
+      "patterns": [
+        "CODE_OF_CONDUCT.md"
+      ],
+      "origin": "third_party",
+      "status": "verified",
+      "copyright_holder": "Contributor Covenant contributors",
+      "license": "Contributor Covenant attribution terms",
+      "source_uri": "https://www.contributor-covenant.org/version/2/1/code_of_conduct/",
+      "evidence": [
+        {
+          "uri": "CODE_OF_CONDUCT.md",
+          "label": "Adapted text with upstream attribution"
+        }
+      ]
+    }
+  ],
+  "history_entries": [
+    {
+      "id": "HIST-001",
+      "title": "Deleted patent and project master prompt retained in public Git history",
+      "path": "Agent-Wallet-Security-Project-Master-Prompt.md",
+      "introduced_commit": "1c4bd727a6c4cda2523cf9f09ce31a1d08432f34",
+      "origin": "repository_authored",
+      "status": "owner_confirmation_required",
+      "copyright_holder": "Rajvardhan Patil (confirmation required)",
+      "license": "Not cleared for public distribution",
+      "evidence": [
+        {
+          "uri": "git+commit:1c4bd727a6c4cda2523cf9f09ce31a1d08432f34:Agent-Wallet-Security-Project-Master-Prompt.md",
+          "label": "Historical Git object containing novelty and publication claims"
+        }
+      ]
+    }
+  ]
+}

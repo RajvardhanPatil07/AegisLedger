@@ -1,0 +1,30 @@
+[profile.default]
+src = "contracts/src"
+test = "contracts/test"
+script = "contracts/script"
+out = "contracts/out"
+cache_path = "contracts/cache"
+solc_version = "0.8.36"
+evm_version = "osaka"
+optimizer = true
+optimizer_runs = 20_000
+via_ir = true
+
+[fmt]
+line_length = 100
+tab_width = 4
+bracket_spacing = true
+
+[fuzz]
+runs = 512
+
+[invariant]
+runs = 128
+depth = 64
+fail_on_revert = true
+show_metrics = true
+
+[lint]
+# Deadlines intentionally use block time; the tolerated skew is part of policy configuration.
+exclude_lints = ["block-timestamp"]
+

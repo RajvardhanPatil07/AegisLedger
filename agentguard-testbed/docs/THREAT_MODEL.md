@@ -1,44 +1,72 @@
-# Threat Model
+# Threat model
 
-## Assets
+## Protected assets
 
-1. Wallet balances (TUSDC, DRB) controlled by the agent's signer.
-2. Wallet configuration and API credentials readable by the agent host.
-3. Execution integrity: the agent trades at intended prices, at intended times.
-4. Availability: legitimate financial tasks must still complete under defense.
+1. Wallet signing keys and authorized wallet balances.
+2. Proposal intent, active policy, reservations, budgets, mandates, and nonces.
+3. Exact transaction integrity from proposal through settlement.
+4. Decision, signer, settlement, attestation, and audit evidence.
+5. Availability of legitimate proposal, execution, and reconciliation work.
 
-## Adversary classes
+## Adversaries
 
-| Adversary | Capabilities | Non-goals |
+| Adversary | In-scope capabilities | Out-of-scope assumption |
 |---|---|---|
-| **A1 Content injector** | Plants instructions in web pages, emails, tool outputs the language agent reads; may encode them (Morse, base64) | Cannot sign, cannot touch the guard host |
-| **A2 Malicious tool server** | Controls tool descriptions and outputs; can redefine tools after approval (rug pull); sees tool-call arguments | Cannot call other tools directly |
-| **A3 Malicious counterparty / resource server** | Inflates payment requirements, swaps recipients, manipulates prices, sends unsolicited inbound assets | Cannot forge signatures |
-| **A4 Compromised peer agent** | A language agent fully following injected instructions; its output is trusted by the executor | Holds no keys by architecture |
-| **A5 Extractive searcher** | Observes the public mempool; can insert/reorder own transactions; ms-latency | Cannot see private-relay flow |
-| **A6 Compromised agent host** (contract-wallet config) | Can bypass the off-chain guard and submit raw transactions | Cannot bypass settlement-time on-chain rules |
+| Content injector | Controls text/tool output read by an agent, including encoded instructions | Cannot directly access the signer network/key |
+| Malicious tool or counterparty | Controls tool metadata/results, payment request, recipient, quote, or inbound asset | Cannot forge policy/signer signatures |
+| Compromised peer/model | Emits arbitrary proposals and tries forbidden API operations | Receives proposal-only capability, no raw signing primitive |
+| Authenticated malicious principal | Sends malformed/large/replayed requests and probes another owner's objects | Cannot forge a valid OIDC token for a stronger role |
+| Compromised API host | Sends arbitrary signer requests, reorders lifecycle operations, withholds evidence | Cannot read signer key or rewrite signer replay state |
+| RPC/searcher adversary | Delays, replaces, reorders, reorgs, or returns malformed chain data | Cannot forge a transaction signed by the managed key |
+| Direct smart-account caller | Bypasses off-chain policy and attempts replay, underbound calldata, or reentrancy | Cannot forge owner/session signature or owner rule update |
+| Database client compromise | Attempts to mutate/delete audit history and lifecycle state | Database superuser/host takeover is a deployment incident, not cryptographically prevented |
 
 ## Trust boundaries
 
-```
-untrusted:  content, tools, peers, counterparties, mempool observers
-boundary 1: LanguageAgent        (sanitizer — probabilistic, bypassable)
-boundary 2: GuardClient          (submit-only object capability)
-boundary 3: PolicyEngine         (deterministic, fail-closed, outside model reach)
-boundary 4: EnclaveAttestor      (key non-exportable; binds verdict to policy+tx)
-boundary 5: IsolatedSigner       (signs only after ALLOW)
-boundary 6: contract-wallet hook (rules re-checked at settlement; survives 1–5 compromise)
+```text
+untrusted content/tools/models
+        -> authenticated proposal API
+        -> deterministic policy + durable reservation/decision
+        -> mTLS isolated signer (independent validation + replay state)
+        -> EVM RPC / mempool / chain
+        -> durable reconciliation + complete attestation
+        -> offline verifier / reviewer
 ```
 
-## Security claims tested
+Keycloak, PostgreSQL, the API, the signer, and the chain are separate failure
+domains. Development Compose places them on one Docker host for reproduction;
+that does not make the host a production isolation boundary.
 
-- **C1** A1–A4 cannot produce a settled unauthorized transfer when the strict
-  guard is active (classes I–III residual success = 0; II-c exfil is out of
-  money scope and disclosed).
-- **C2** A5 cannot extract value when flow is private, and is detected/cancelled
-  when the mev-aware guard observes >100bps pool movement.
-- **C3** A6 cannot exceed on-chain per-tx caps (contract-wallet config).
-- **C4** Every verdict is accompanied by an attestation that verifies offline;
-  any tampering with policy hash, tx hash, or verdict invalidates it.
-- **C5** Audit-log tampering is detectable (hash chain).
-- **C6** Utility: defenses do not degrade legitimate task completion.
+## Security objectives
+
+- Only an active policy ALLOW decision for the same proposal/reservation can
+  authorize signing.
+- The signer, not the API, derives the digest of the exact canonical transaction.
+- A decision or wallet nonce cannot produce a second signature.
+- Ownership and roles prevent cross-principal lifecycle/evidence operations.
+- A submitted transaction reaches one durable terminal state from canonical
+  receipt evidence after configured confirmations.
+- Retained evidence verifies without mutable service state and audit mutation is
+  detectable.
+- Direct smart-account calls cannot bypass signature, nonce, cap, allowlist,
+  deadline, calldata, emergency-stop, or reentrancy controls.
+
+## Availability and ambiguity
+
+Fail-closed behavior can sacrifice liveness. Signer/database interruption may
+consume an authorization without persisting a signed execution; identity/RPC
+unavailability blocks new execution; MEV-aware cancellation can defer a valid
+swap. These outcomes are preferred to duplicate or underbound signing and must
+be handled by runbook, not replay-state deletion.
+
+## Explicit non-goals
+
+- Preventing arbitrary data exfiltration through model/tool arguments.
+- Defending a fully compromised production database superuser, signer runtime,
+  hypervisor, or hardware root of trust.
+- Proving economic safety across live chains, bridges, tokens, protocols, MEV,
+  oracle failures, or governance changes.
+- Establishing hardware attestation from `local-compose-v1` software evidence.
+- Claiming independent audit or production custody readiness.
+
+Map each objective to current evidence in [SECURITY_CLAIMS.md](SECURITY_CLAIMS.md).

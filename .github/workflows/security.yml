@@ -144,19 +144,19 @@ jobs:
         with:
           image-ref: aegisledger-api:ci
           format: cyclonedx
-          output: artifacts/aegisledger-api.cdx.json
+          output: agentguard-testbed/artifacts/aegisledger-api.cdx.json
       - name: Generate signer CycloneDX SBOM
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
           image-ref: aegisledger-signer:ci
           format: cyclonedx
-          output: artifacts/aegisledger-signer.cdx.json
+          output: agentguard-testbed/artifacts/aegisledger-signer.cdx.json
       - name: Generate console CycloneDX SBOM
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
           image-ref: aegisledger-console:ci
           format: cyclonedx
-          output: artifacts/aegisledger-console.cdx.json
+          output: agentguard-testbed/artifacts/aegisledger-console.cdx.json
       - name: Bind SBOM and provenance evidence to exact commit
         run: >-
           python3 scripts/release_evidence.py build

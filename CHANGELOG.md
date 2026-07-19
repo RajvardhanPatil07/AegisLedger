@@ -11,6 +11,8 @@ Semantic Versioning while its public contracts stabilize.
   non-root API and signer processes can start without weakening host key permissions.
 - Enable the containerd image store in security CI so local image scans retain
   maximum-mode provenance attestations without requiring a registry push.
+- Write action-generated image SBOMs to the repository-relative artifact path
+  used by the evidence binder and artifact uploader.
 - Bound serialized EIP-1559 bytes exactly to authorized transaction fields in
   the deployed Rust signer, with stable identity and replay state.
 - Added smart-account reentrancy protection and a malicious-target regression.

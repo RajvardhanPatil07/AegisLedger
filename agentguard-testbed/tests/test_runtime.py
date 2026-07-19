@@ -256,3 +256,22 @@ def test_security_workflow_enables_containerd_store_for_local_attestations():
     )
     daemon_config = yaml.safe_load(setup["with"]["daemon-config"])
     assert daemon_config == {"features": {"containerd-snapshotter": True}}
+
+
+def test_security_workflow_writes_action_sboms_inside_artifact_directory():
+    workflow = yaml.safe_load(
+        (ROOT.parent / ".github" / "workflows" / "security.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    steps = workflow["jobs"]["container-images"]["steps"]
+    sbom_steps = [
+        step for step in steps if step.get("name", "").endswith("CycloneDX SBOM")
+    ]
+
+    assert len(sbom_steps) == 3
+    assert {step["with"]["output"] for step in sbom_steps} == {
+        "agentguard-testbed/artifacts/aegisledger-api.cdx.json",
+        "agentguard-testbed/artifacts/aegisledger-signer.cdx.json",
+        "agentguard-testbed/artifacts/aegisledger-console.cdx.json",
+    }

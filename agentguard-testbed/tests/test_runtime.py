@@ -275,3 +275,23 @@ def test_security_workflow_writes_action_sboms_inside_artifact_directory():
         "agentguard-testbed/artifacts/aegisledger-signer.cdx.json",
         "agentguard-testbed/artifacts/aegisledger-console.cdx.json",
     }
+
+
+def test_security_workflow_keeps_scanner_cache_outside_repository():
+    workflow = yaml.safe_load(
+        (ROOT.parent / ".github" / "workflows" / "security.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    steps = workflow["jobs"]["container-images"]["steps"]
+    trivy_steps = [
+        step
+        for step in steps
+        if step.get("uses", "").startswith("aquasecurity/trivy-action@")
+    ]
+
+    assert len(trivy_steps) == 6
+    assert all(
+        step["with"].get("cache-dir") == "${{ runner.temp }}/trivy-cache"
+        for step in trivy_steps
+    )

@@ -13,6 +13,8 @@ Semantic Versioning while its public contracts stabilize.
   maximum-mode provenance attestations without requiring a registry push.
 - Write action-generated image SBOMs to the repository-relative artifact path
   used by the evidence binder and artifact uploader.
+- Keep the container scanner cache in the runner's temporary directory so
+  exact-commit evidence generation sees an otherwise clean checkout.
 - Bound serialized EIP-1559 bytes exactly to authorized transaction fields in
   the deployed Rust signer, with stable identity and replay state.
 - Added smart-account reentrancy protection and a malicious-target regression.

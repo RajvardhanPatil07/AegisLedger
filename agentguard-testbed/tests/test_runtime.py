@@ -240,3 +240,19 @@ def test_formal_checker_has_digest_pinned_container_fallback():
         "d63bd8d9b171999cbed8576f2c76e874dd4856791a358536e5c4d407e77edc13"
         in checker
     )
+
+
+def test_security_workflow_enables_containerd_store_for_local_attestations():
+    workflow = yaml.safe_load(
+        (ROOT.parent / ".github" / "workflows" / "security.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    steps = workflow["jobs"]["container-images"]["steps"]
+    setup = next(step for step in steps if step.get("name") == "Enable containerd image store")
+
+    assert setup["uses"] == (
+        "docker/setup-docker-action@6d7cfa65f60a9dda7b46e5513fa982536f3c9877"
+    )
+    daemon_config = yaml.safe_load(setup["with"]["daemon-config"])
+    assert daemon_config == {"features": {"containerd-snapshotter": True}}

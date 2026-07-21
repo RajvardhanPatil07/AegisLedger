@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from aegisledger.api import ServiceContainer, create_app
 from aegisledger.attestations import EnclaveEvidenceV1
-from aegisledger.auth import Principal, Role
+from aegisledger.auth import Permission, Principal, PrincipalKind, Role
 from aegisledger.contracts import LifecycleState
 from aegisledger.decisions import DecisionIssuer
 from aegisledger.policies import PolicyRegistry
@@ -169,6 +169,45 @@ def test_researcher_can_submit_proposal_and_receive_signed_decision():
     assert body["state"] == "RESERVED"
     assert body["decision"]["verdict"] == "ALLOW"
     assert body["decision"]["proposal_hash"].startswith("0x")
+
+
+def test_scoped_service_principal_can_submit_and_read_its_proposal():
+    services = container_with_active_policy()
+    writer = Principal(
+        subject="researcher",
+        roles=set(),
+        permissions={Permission.PROPOSALS_WRITE},
+        kind=PrincipalKind.SERVICE,
+        organization_id="acme",
+        environment_id="staging",
+    )
+    client, _ = client_for(writer, services)
+
+    created = client.post("/api/v1/proposals", json=proposal_document())
+    status = client.get(f"/api/v1/proposals/{created.json()['proposal_id']}")
+
+    assert created.status_code == 202
+    assert status.status_code == 200
+    assert status.json()["state"] == "RESERVED"
+
+
+def test_read_only_service_principal_cannot_submit_or_administer_policy():
+    reader = Principal(
+        subject="researcher",
+        roles=set(),
+        permissions={Permission.PROPOSALS_READ},
+        kind=PrincipalKind.SERVICE,
+        organization_id="acme",
+        environment_id="staging",
+    )
+    client, _ = client_for(reader)
+
+    proposal = client.post("/api/v1/proposals", json=proposal_document())
+    policy = client.post("/api/v1/policies", json=policy_document())
+
+    assert proposal.status_code == 403
+    assert proposal.json()["error"]["code"] == "FORBIDDEN"
+    assert policy.status_code == 403
 
 
 def test_expired_proposal_is_retained_as_a_denied_decision():
@@ -380,10 +419,15 @@ def test_experiment_queue_enforces_per_principal_active_quota():
 
 def test_openapi_exposes_versioned_capabilities_without_raw_signing_or_submission():
     client, _ = client_for(Principal(subject="auditor", roles={Role.AUDITOR}))
-    paths = client.get("/openapi.json").json()["paths"]
+    document = client.get("/openapi.json").json()
+    paths = document["paths"]
     assert "/api/v1/proposals" in paths
     assert "/api/v1/policies/simulations" in paths
     assert "/api/v1/attestations/verifications" in paths
     assert "/api/v1/experiments" in paths
     forbidden_fragments = ("/sign", "raw-transaction", "submit-transaction")
     assert not any(fragment in path for path in paths for fragment in forbidden_fragments)
+    assert document["components"]["securitySchemes"]["BearerAuth"] == {
+        "type": "http",
+        "scheme": "bearer",
+    }

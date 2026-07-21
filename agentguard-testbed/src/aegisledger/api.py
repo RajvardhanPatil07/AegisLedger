@@ -15,9 +15,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Request, Security
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from starlette.concurrency import run_in_threadpool
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -35,7 +36,7 @@ from .attestations import (
     verify_complete_attestation,
 )
 from .audit import AuditJournal, EventJournal
-from .auth import AuthenticationError, OIDCAuthenticator, Principal, Role
+from .auth import AuthenticationError, OIDCAuthenticator, Permission, Principal, Role
 from .chain import ChainBackend, ChainSubmission
 from .contracts import DecisionTokenV1, LifecycleState, ProposalV1, SignedTransactionV1
 from .decisions import DecisionIssuer, verify_decision_token
@@ -653,6 +654,7 @@ def create_app(
     authenticator: Authenticator | None = None,
 ) -> FastAPI:
     authenticate = authenticator or OIDCAuthenticator.from_environment()
+    bearer_auth = HTTPBearer(auto_error=False, scheme_name="BearerAuth")
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -743,12 +745,18 @@ def create_app(
             },
         )
 
-    async def current_principal(request: Request) -> Principal:
+    async def current_principal(
+        request: Request,
+        _credential: HTTPAuthorizationCredentials | None = Security(bearer_auth),
+    ) -> Principal:
         value = authenticate(request)
         principal = await value if inspect.isawaitable(value) else value
+        rate_subject = (
+            f"{principal.organization_id}:{principal.environment_id}:{principal.subject}"
+        )
         allowed = await run_in_threadpool(
             services.rate_limiter.consume,
-            principal.subject,
+            rate_subject,
             limit=services.rate_limit_requests,
             window_seconds=services.rate_limit_window_seconds,
         )
@@ -756,13 +764,25 @@ def create_app(
             raise ApiError(429, "RATE_LIMITED", "principal request rate exceeded")
         return principal
 
-    def require_roles(*allowed: Role):
+    def require_access(
+        *,
+        roles: tuple[Role, ...] = (),
+        permissions: tuple[Permission, ...] = (),
+    ):
+        if not roles and not permissions:
+            raise ValueError("access dependency requires a role or permission")
+
         async def authorize(principal: Principal = Depends(current_principal)) -> Principal:
-            if not principal.roles.intersection(allowed):
-                raise ApiError(403, "FORBIDDEN", "role does not permit this operation")
+            role_allowed = bool(principal.roles.intersection(roles))
+            permission_allowed = bool(principal.permissions.intersection(permissions))
+            if not role_allowed and not permission_allowed:
+                raise ApiError(403, "FORBIDDEN", "credential does not permit this operation")
             return principal
 
         return authorize
+
+    def require_roles(*allowed: Role):
+        return require_access(roles=allowed)
 
     def enforce_read_scope(record: ProposalRecord, principal: Principal) -> None:
         broad_read_roles = {Role.VIEWER, Role.POLICY_ADMIN, Role.AUDITOR}
@@ -801,7 +821,12 @@ def create_app(
     @app.post("/api/v1/proposals", response_model=SubmissionResponse, status_code=202)
     async def submit_proposal(
         proposal: ProposalV1,
-        principal: Principal = Depends(require_roles(Role.RESEARCHER)),
+        principal: Principal = Depends(
+            require_access(
+                roles=(Role.RESEARCHER,),
+                permissions=(Permission.PROPOSALS_WRITE,),
+            )
+        ),
     ):
         if proposal.principal_id != principal.subject:
             raise ApiError(
@@ -818,7 +843,10 @@ def create_app(
     async def proposal_status(
         proposal_id: uuid.UUID,
         principal: Principal = Depends(
-            require_roles(Role.VIEWER, Role.RESEARCHER, Role.POLICY_ADMIN, Role.AUDITOR)
+            require_access(
+                roles=(Role.VIEWER, Role.RESEARCHER, Role.POLICY_ADMIN, Role.AUDITOR),
+                permissions=(Permission.PROPOSALS_READ, Permission.PROPOSALS_WRITE),
+            )
         ),
     ):
         record = services.state.get(proposal_id)
@@ -835,7 +863,12 @@ def create_app(
     async def execute_proposal(
         proposal_id: uuid.UUID,
         request: ExecutionRequest,
-        principal: Principal = Depends(require_roles(Role.RESEARCHER)),
+        principal: Principal = Depends(
+            require_access(
+                roles=(Role.RESEARCHER,),
+                permissions=(Permission.PROPOSALS_WRITE,),
+            )
+        ),
     ):
         try:
             return await run_in_threadpool(
@@ -902,7 +935,12 @@ def create_app(
     @app.post("/api/v1/policies/simulations", response_model=PolicySimulationResponse)
     async def simulate_policy(
         request: PolicySimulationRequest,
-        _principal: Principal = Depends(require_roles(Role.RESEARCHER, Role.POLICY_ADMIN)),
+        _principal: Principal = Depends(
+            require_access(
+                roles=(Role.RESEARCHER, Role.POLICY_ADMIN),
+                permissions=(Permission.POLICIES_SIMULATE,),
+            )
+        ),
     ):
         reasons = services.state.simulate(request.proposal, request.policy)
         return PolicySimulationResponse(
@@ -917,7 +955,12 @@ def create_app(
     )
     async def verify_attestation(
         request: AttestationVerificationRequest,
-        _principal: Principal = Depends(require_roles(Role.AUDITOR, Role.RESEARCHER)),
+        _principal: Principal = Depends(
+            require_access(
+                roles=(Role.AUDITOR, Role.RESEARCHER),
+                permissions=(Permission.ATTESTATIONS_VERIFY,),
+            )
+        ),
     ):
         if request.attestation is not None:
             report = verify_complete_attestation(
@@ -945,7 +988,10 @@ def create_app(
     async def proposal_attestation(
         proposal_id: uuid.UUID,
         principal: Principal = Depends(
-            require_roles(Role.VIEWER, Role.RESEARCHER, Role.AUDITOR)
+            require_access(
+                roles=(Role.VIEWER, Role.RESEARCHER, Role.AUDITOR),
+                permissions=(Permission.PROPOSALS_READ, Permission.PROPOSALS_WRITE),
+            )
         ),
     ):
         record = services.state.get(proposal_id)

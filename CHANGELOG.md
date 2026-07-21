@@ -39,6 +39,13 @@ Semantic Versioning while its public contracts stabilize.
 ### Changed
 
 - Prepare the repository for independent review and a publication decision.
+- Prevent non-auditors from issuing an audit-journal request that can only be
+  rejected, and explain the required role before the action.
+
+### Fixed
+
+- Reconcile Keycloak callback origins on every Compose startup so authentication
+  works with custom console ports and both loopback hostnames.
 
 ## [0.2.0] - 2026-07-18
 

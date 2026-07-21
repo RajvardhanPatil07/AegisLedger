@@ -6,11 +6,12 @@ import { EmptyState, JsonEditor, PageHeading } from "./ui";
 
 type EvidenceProps = {
   api: ConsoleApi;
+  canReadAudit: boolean;
   initialProposalId: string;
   notify: (notice: Notice) => void;
 };
 
-export function Evidence({ api, initialProposalId, notify }: EvidenceProps) {
+export function Evidence({ api, canReadAudit, initialProposalId, notify }: EvidenceProps) {
   const [kind, setKind] = useState<"decision" | "attestation">("decision");
   const [proposalId, setProposalId] = useState(initialProposalId);
   const [artifact, setArtifact] = useState("{}");
@@ -53,6 +54,7 @@ export function Evidence({ api, initialProposalId, notify }: EvidenceProps) {
   };
 
   const loadAudit = async () => {
+    if (!canReadAudit) return;
     setBusy(true);
     try {
       setEvents(await api.auditEvents());
@@ -146,7 +148,7 @@ export function Evidence({ api, initialProposalId, notify }: EvidenceProps) {
             <button
               className="button button--quiet"
               type="button"
-              disabled={busy}
+              disabled={busy || !canReadAudit}
               onClick={() => void loadAudit()}
             >
               Load stream
@@ -179,8 +181,12 @@ export function Evidence({ api, initialProposalId, notify }: EvidenceProps) {
           ) : (
             <EmptyState
               icon="fingerprint"
-              title="Audit stream not loaded"
-              detail="Auditor authorization is required to read journal evidence."
+              title={canReadAudit ? "Audit stream not loaded" : "Auditor role required"}
+              detail={
+                canReadAudit
+                  ? "Load the retained journal to inspect append-only evidence."
+                  : "Your current role cannot read the audit journal. Sign in with the local auditor account to continue."
+              }
               compact
             />
           )}

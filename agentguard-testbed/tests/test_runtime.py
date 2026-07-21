@@ -196,7 +196,7 @@ def test_console_is_loopback_only_and_has_no_signer_dependency():
     web = compose["services"]["web"]
 
     assert web["ports"] == ["127.0.0.1:${AEGIS_WEB_PORT:-4173}:8080"]
-    assert set(web["depends_on"]) == {"api"}
+    assert set(web["depends_on"]) == {"api", "keycloak-config-init"}
     assert web["read_only"] is True
     assert "no-new-privileges:true" in web["security_opt"]
     assert web["healthcheck"]["test"][-1] == "http://127.0.0.1:8080/"
@@ -238,6 +238,52 @@ def test_keycloak_console_client_is_self_contained_and_emits_api_roles():
         user.get("email") and user.get("firstName") and user.get("lastName")
         for user in realm["users"]
     )
+
+
+def test_keycloak_console_client_accepts_configured_loopback_origins():
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    realm = yaml.safe_load(
+        (ROOT / "deploy" / "keycloak" / "aegisledger-realm.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    client = next(
+        item for item in realm["clients"] if item["clientId"] == "aegisledger-console"
+    )
+
+    assert compose["services"]["keycloak"]["environment"]["AEGIS_WEB_PORT"] == (
+        "${AEGIS_WEB_PORT:-4173}"
+    )
+    assert client["redirectUris"] == [
+        "http://localhost:${AEGIS_WEB_PORT}/*",
+        "http://127.0.0.1:${AEGIS_WEB_PORT}/*",
+        "http://localhost:5173/*",
+        "http://127.0.0.1:5173/*",
+    ]
+    assert client["webOrigins"] == [
+        "http://localhost:${AEGIS_WEB_PORT}",
+        "http://127.0.0.1:${AEGIS_WEB_PORT}",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+
+
+def test_keycloak_config_init_reconciles_custom_port_before_web_start():
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    services = compose["services"]
+    keycloak_init = services["keycloak-config-init"]
+    script = (ROOT / "scripts" / "configure_keycloak.sh").read_text(encoding="utf-8")
+
+    assert keycloak_init["image"] == services["keycloak"]["image"]
+    assert keycloak_init["environment"]["AEGIS_WEB_PORT"] == "${AEGIS_WEB_PORT:-4173}"
+    assert keycloak_init["depends_on"]["keycloak"] == {"condition": "service_started"}
+    assert keycloak_init["read_only"] is True
+    assert "no-new-privileges:true" in keycloak_init["security_opt"]
+    assert services["web"]["depends_on"]["keycloak-config-init"] == {
+        "condition": "service_completed_successfully"
+    }
+    assert "http://localhost:${AEGIS_WEB_PORT}/*" in script
+    assert "http://127.0.0.1:${AEGIS_WEB_PORT}/*" in script
 
 
 def test_formal_checker_has_digest_pinned_container_fallback():

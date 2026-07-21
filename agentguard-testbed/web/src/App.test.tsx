@@ -1,9 +1,17 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { App } from "./App";
+import { App, hasRealmRole } from "./App";
 
 describe("AegisLedger console", () => {
+  it("derives auditor access from the mapped Keycloak realm roles", () => {
+    expect(
+      hasRealmRole({ realm_access: { roles: ["viewer", "auditor"] } }, "auditor"),
+    ).toBe(true);
+    expect(hasRealmRole({ realm_access: { roles: ["viewer"] } }, "auditor")).toBe(false);
+    expect(hasRealmRole({ realm_access: "malformed" }, "auditor")).toBe(false);
+  });
+
   it("shows the runtime posture in demo mode", async () => {
     render(<App demoMode />);
 

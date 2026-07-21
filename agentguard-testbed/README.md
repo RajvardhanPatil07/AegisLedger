@@ -63,6 +63,9 @@ offline attestation. Open `http://localhost:4173`. The API is at
 Prometheus, Grafana, Anvil, and the signer health endpoint are loopback-only.
 Bootstrap generates ignored development keys, certificates, and a policy bound
 to the generated signer identity. No default secret is committed.
+Sign in as `researcher` with the generated `DEV_RESEARCHER_PASSWORD` from
+`.env.local`. The policy-administrator and auditor accounts intentionally
+require TOTP enrollment before their privileged controls become available.
 
 If either public demo port is already in use, override it without editing the
 Compose file:

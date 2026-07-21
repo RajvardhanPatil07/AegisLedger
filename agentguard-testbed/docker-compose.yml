@@ -35,6 +35,7 @@ services:
       DEV_POLICY_ADMIN_A_PASSWORD: ${DEV_POLICY_ADMIN_A_PASSWORD}
       DEV_POLICY_ADMIN_B_PASSWORD: ${DEV_POLICY_ADMIN_B_PASSWORD}
       DEV_AUDITOR_PASSWORD: ${DEV_AUDITOR_PASSWORD}
+      AEGIS_WEB_PORT: ${AEGIS_WEB_PORT:-4173}
     volumes:
       - ./deploy/keycloak/aegisledger-realm.json:/opt/keycloak/data/import/aegisledger-realm.json:ro
     ports:
@@ -48,6 +49,25 @@ services:
         limits:
           memory: 1g
     restart: unless-stopped
+
+  keycloak-config-init:
+    image: quay.io/keycloak/keycloak:26.7.0@sha256:2eb3cd316835c990e69e26ade292ffa78f6fb0db7d5fc6377463c162e1979ac0
+    entrypoint: ["/bin/bash", "/opt/aegis/configure-keycloak.sh"]
+    environment:
+      KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME}
+      KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD}
+      AEGIS_WEB_PORT: ${AEGIS_WEB_PORT:-4173}
+    volumes:
+      - ./scripts/configure_keycloak.sh:/opt/aegis/configure-keycloak.sh:ro
+    depends_on:
+      keycloak:
+        condition: service_started
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
 
   anvil:
     image: ghcr.io/foundry-rs/foundry:v1.7.1@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd
@@ -205,6 +225,8 @@ services:
     depends_on:
       api:
         condition: service_healthy
+      keycloak-config-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/"]
       interval: 10s

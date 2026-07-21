@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
+import subprocess
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -162,6 +164,7 @@ def track_readiness(
     repository_root: Path,
     *,
     today: date,
+    expected_commit: str | None = None,
 ) -> tuple[bool, list[str]]:
     """Return whether every gate in a track is current and passed."""
     if track_name not in TRACKS:
@@ -176,7 +179,28 @@ def track_readiness(
     candidate_commit = scorecard.get("candidate_commit")
     if not isinstance(candidate_commit, str):
         return False, ["candidate_commit is required before a track can be ready"]
+    if expected_commit is not None and candidate_commit != expected_commit:
+        return False, [
+            f"candidate_commit does not match checked-out commit: {expected_commit}"
+        ]
     return not reasons, reasons
+
+
+def git_commit(repository_root: Path) -> str:
+    """Return the exact checked-out Git commit for release binding."""
+    git = shutil.which("git")
+    if git is None:
+        raise RuntimeError("git is required to bind readiness to the checked-out commit")
+    result = subprocess.run(  # noqa: S603 - fixed Git command; no untrusted arguments
+        [git, "-C", str(repository_root), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    commit = result.stdout.strip()
+    if re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+        raise RuntimeError("git rev-parse HEAD did not return a full lowercase commit SHA")
+    return commit
 
 
 def parse_args() -> argparse.Namespace:
@@ -206,6 +230,7 @@ def main() -> int:
             args.require_track,
             repository_root,
             today=date.today(),
+            expected_commit=git_commit(repository_root),
         )
     else:
         messages = validate_scorecard(value, repository_root, today=date.today())

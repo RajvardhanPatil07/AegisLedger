@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main, "feature/**"]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -37,8 +38,8 @@ jobs:
           enable-cache: true
           working-directory: agentguard-testbed
       - run: uv sync --all-extras --frozen
-      - name: Validate candidate release metadata
-        run: uv run python scripts/check_release_metadata.py --mode candidate
+      - name: Validate release metadata
+        run: uv run python scripts/check_release_metadata.py --mode auto
       - name: Validate assurance scorecard ownership and evidence
         run: uv run python scripts/check_assurance_scorecard.py
       - name: Validate source and asset provenance coverage

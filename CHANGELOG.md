@@ -7,6 +7,10 @@ Semantic Versioning while its public contracts stabilize.
 
 ### Security
 
+- Grant the private-repository CodeQL job the minimum `actions: read`
+  permission required to upload and report analysis results.
+- Bind public-release assurance to the exact checked-out commit and run every
+  required remote gate automatically for `v*` tags.
 - Stage file-backed Compose secrets into service-owned, mode-`0400` volumes so
   non-root API and signer processes can start without weakening host key permissions.
 - Enable the containerd image store in security CI so local image scans retain
@@ -23,6 +27,10 @@ Semantic Versioning while its public contracts stabilize.
 
 ### Added
 
+- Add a one-command local signed-settlement demo and a fail-closed
+  `make public-release-ready` gate.
+- Validate candidate, prepared-release, and tagged-release metadata as distinct
+  lifecycle states.
 - Durable signed-transaction, settlement, attestation, audit, experiment, and
   rate-limit state with restart recovery.
 - Evidence-backed security claim matrix, architecture decisions, independent

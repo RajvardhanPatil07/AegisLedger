@@ -76,6 +76,32 @@ def test_candidate_rejects_a_release_date_or_release_heading(tmp_path: Path):
     assert "candidate changelog must retain an [Unreleased] section" in errors
 
 
+def test_prepared_release_accepts_dated_metadata_before_tagging(tmp_path: Path):
+    write_candidate(
+        tmp_path,
+        citation_date="2026-07-18",
+        roadmap_heading="## Current release: 0.3.0",
+        changelog_heading="## [0.3.0] - 2026-07-18",
+    )
+
+    assert validate_metadata(tmp_path, mode="prepared", tags=()) == []
+    assert validate_metadata(tmp_path, mode="auto", tags=()) == []
+
+
+def test_auto_mode_validates_an_existing_release_tag(tmp_path: Path):
+    write_candidate(
+        tmp_path,
+        citation_date="2026-07-18",
+        roadmap_heading="## Current release: 0.3.0",
+        changelog_heading="## [0.3.0] - 2026-07-18",
+    )
+
+    assert validate_metadata(tmp_path, mode="auto", tags=("v0.3.0",)) == []
+
+    errors = validate_metadata(tmp_path, mode="prepared", tags=("v0.3.0",))
+    assert "prepared release already has tag v0.3.0" in errors
+
+
 def test_release_requires_matching_date_changelog_and_tag(tmp_path: Path):
     write_candidate(
         tmp_path,

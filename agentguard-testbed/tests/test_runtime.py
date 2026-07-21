@@ -153,6 +153,14 @@ def test_compose_api_port_is_loopback_only_and_locally_overridable():
     ]
 
 
+def test_demo_target_honors_host_port_overrides():
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+
+    assert "export AEGIS_API_PORT AEGIS_WEB_PORT" in makefile
+    assert "http://127.0.0.1:$(AEGIS_API_PORT)/health/ready" in makefile
+    assert "Console: http://localhost:$(AEGIS_WEB_PORT)" in makefile
+
+
 def test_api_runtime_uses_current_digest_pinned_python_base():
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 
@@ -309,3 +317,27 @@ def test_codeql_workflow_has_private_repository_upload_permissions():
         "contents": "read",
         "security-events": "write",
     }
+
+
+def test_release_tags_run_every_required_remote_gate():
+    workflow_root = ROOT.parent / ".github" / "workflows"
+    required = ("ci.yml", "codeql.yml", "mutation.yml", "runtime-smoke.yml", "security.yml")
+
+    for name in required:
+        workflow = yaml.safe_load(
+            (workflow_root / name).read_text(encoding="utf-8")
+        )
+        # PyYAML 1.1 resolves the unquoted GitHub Actions `on` key to True.
+        assert workflow[True]["push"]["tags"] == ["v*"], name
+
+
+def test_ci_auto_validates_candidate_prepared_and_tagged_release_metadata():
+    workflow = yaml.safe_load(
+        (ROOT.parent / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    steps = workflow["jobs"]["python"]["steps"]
+    metadata_step = next(
+        step for step in steps if step.get("name") == "Validate release metadata"
+    )
+
+    assert metadata_step["run"] == "uv run python scripts/check_release_metadata.py --mode auto"

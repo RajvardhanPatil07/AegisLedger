@@ -3,6 +3,7 @@ name: Security
 on:
   push:
     branches: [main, "feature/**"]
+    tags: ["v*"]
   pull_request:
   schedule:
     - cron: "17 3 * * 2"

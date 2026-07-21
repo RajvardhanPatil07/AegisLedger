@@ -15,7 +15,7 @@ from typing import Literal
 
 import yaml
 
-Mode = Literal["candidate", "release"]
+Mode = Literal["auto", "candidate", "prepared", "release"]
 
 
 def collect_versions(repository_root: Path) -> dict[str, str]:
@@ -46,8 +46,8 @@ def validate_metadata(
     mode: Mode,
     tags: Sequence[str],
 ) -> list[str]:
-    """Return all metadata-policy errors for a candidate or immutable release."""
-    if mode not in {"candidate", "release"}:
+    """Return all metadata-policy errors across the candidate-to-release lifecycle."""
+    if mode not in {"auto", "candidate", "prepared", "release"}:
         raise ValueError(f"unsupported release metadata mode: {mode}")
 
     versions = collect_versions(repository_root)
@@ -61,6 +61,14 @@ def validate_metadata(
     citation_date = citation.get("date-released")
     changelog = (repository_root / "CHANGELOG.md").read_text(encoding="utf-8")
     roadmap = (repository_root / "ROADMAP.md").read_text(encoding="utf-8")
+
+    if mode == "auto":
+        if citation_date is None:
+            mode = "candidate"
+        elif f"v{version}" in tags:
+            mode = "release"
+        else:
+            mode = "prepared"
 
     if mode == "candidate":
         if citation_date is not None:
@@ -100,7 +108,9 @@ def validate_metadata(
         errors.append(f"CHANGELOG.md must contain a dated [{version}] release section")
     elif release_date is not None and changelog_match.group(1) != release_date:
         errors.append("CHANGELOG.md release date must match CITATION.cff date-released")
-    if f"v{version}" not in tags:
+    if mode == "prepared" and f"v{version}" in tags:
+        errors.append(f"prepared release already has tag v{version}")
+    elif mode == "release" and f"v{version}" not in tags:
         errors.append(f"release tag v{version} is missing")
     return errors
 
@@ -133,7 +143,11 @@ def _git_tags(repository_root: Path) -> tuple[str, ...]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("candidate", "release"), default="candidate")
+    parser.add_argument(
+        "--mode",
+        choices=("auto", "candidate", "prepared", "release"),
+        default="auto",
+    )
     parser.add_argument(
         "--repository-root",
         type=Path,

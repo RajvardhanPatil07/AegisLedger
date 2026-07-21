@@ -12,12 +12,34 @@ current and `passed`, verified evidence is recorded, and the scorecard is bound
 to an exact candidate commit. Pending or blocked gates are intentionally valid
 scorecard states; they are not release approval.
 
+`make assurance-public` additionally requires every public-release gate to be
+current and passed, and rejects a `candidate_commit` that differs from the
+checked-out Git commit. This prevents evidence from a previously reviewed SHA
+from approving different code.
+
 The [source and asset provenance inventory](PROVENANCE.md) must cover every
 tracked file and relevant historical object. `make provenance` validates the
 inventory without overstating clearance. A public release must additionally
 pass `python scripts/check_provenance_inventory.py --require-release-ready`;
 that command fails until all distributable material has durable ownership,
 license, and source evidence.
+
+## Release metadata lifecycle
+
+Release metadata is validated in three fail-closed states:
+
+1. **Candidate:** versions agree, the changelog remains unreleased, no release
+   date is recorded, and no matching tag exists.
+2. **Prepared:** versions agree and the citation, roadmap, and changelog contain
+   one matching release version and date, but the tag does not exist yet.
+3. **Released:** the prepared metadata is committed and the matching `v*` tag
+   exists.
+
+`make release-metadata` detects and validates the current state. After the
+prepared release commit is reviewed, create the signed tag and run
+`make public-release-ready`. The latter requires final tagged metadata, the
+exact-commit public assurance track, and release-cleared current and historical
+provenance. It must be green before changing repository visibility.
 
 ## Automated gates
 
@@ -44,6 +66,11 @@ Third-party actions use full commit SHAs. Runtime image tags are retained for
 human readability and paired with immutable digests. Dependabot should maintain
 Cargo, Docker, GitHub Actions, npm, and Python dependencies; an update cannot
 merge solely because it is newer.
+
+Every `v*` tag triggers CI, CodeQL, dependency/source/image security, mutation,
+and full runtime-smoke workflows at the tagged commit. Do not create the GitHub
+release until all tag-triggered jobs are green and their evidence has been
+retained.
 
 ## Candidate evidence bundle
 

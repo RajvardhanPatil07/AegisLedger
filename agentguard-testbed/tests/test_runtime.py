@@ -295,3 +295,17 @@ def test_security_workflow_keeps_scanner_cache_outside_repository():
         step["with"].get("cache-dir") == "${{ runner.temp }}/trivy-cache"
         for step in trivy_steps
     )
+
+
+def test_codeql_workflow_has_private_repository_upload_permissions():
+    workflow = yaml.safe_load(
+        (ROOT.parent / ".github" / "workflows" / "codeql.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert workflow["permissions"] == {
+        "actions": "read",
+        "contents": "read",
+        "security-events": "write",
+    }

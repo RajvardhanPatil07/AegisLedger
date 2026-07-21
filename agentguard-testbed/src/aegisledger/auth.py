@@ -18,11 +18,27 @@ class Role(StrEnum):
     AUDITOR = "auditor"
 
 
+class Permission(StrEnum):
+    PROPOSALS_READ = "proposals:read"
+    PROPOSALS_WRITE = "proposals:write"
+    POLICIES_SIMULATE = "policies:simulate"
+    ATTESTATIONS_VERIFY = "attestations:verify"
+
+
+class PrincipalKind(StrEnum):
+    HUMAN = "human"
+    SERVICE = "service"
+
+
 class Principal(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     subject: str = Field(min_length=1, max_length=256)
     roles: frozenset[Role]
+    permissions: frozenset[Permission] = frozenset()
+    kind: PrincipalKind = PrincipalKind.HUMAN
+    organization_id: str = Field(default="local", min_length=1, max_length=128)
+    environment_id: str = Field(default="development", min_length=1, max_length=128)
 
 
 class OIDCConfigurationError(RuntimeError):

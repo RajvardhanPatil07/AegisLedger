@@ -9,11 +9,16 @@ from fastapi.testclient import TestClient
 
 from aegisledger.api import ServiceContainer, create_app
 from aegisledger.attestations import EnclaveEvidenceV1
-from aegisledger.auth import Permission, Principal, PrincipalKind, Role
+from aegisledger.auth import AuthenticationError, Permission, Principal, PrincipalKind, Role
 from aegisledger.contracts import LifecycleState
 from aegisledger.decisions import DecisionIssuer
 from aegisledger.policies import PolicyRegistry
 from aegisledger.policy import PolicyV1
+from aegisledger.service_accounts import (
+    CompositeAuthenticator,
+    MemoryServiceAccountStore,
+    ServiceAccountManager,
+)
 from aegisledger.signer_client import SignerIdentity, SignerResult
 from aegisledger.state import MemoryStateStore
 
@@ -208,6 +213,37 @@ def test_read_only_service_principal_cannot_submit_or_administer_policy():
     assert proposal.status_code == 403
     assert proposal.json()["error"]["code"] == "FORBIDDEN"
     assert policy.status_code == 403
+
+
+def test_real_service_bearer_credential_authenticates_the_proposal_api():
+    accounts = ServiceAccountManager(
+        MemoryServiceAccountStore(),
+        organization_id="acme",
+        environment_id="staging",
+    )
+    issued = accounts.issue(
+        name="checkout-agent",
+        subject="researcher",
+        permissions={Permission.PROPOSALS_WRITE},
+    )
+
+    def reject_oidc(_request):
+        raise AuthenticationError("invalid bearer token")
+
+    app = create_app(
+        container_with_active_policy(),
+        authenticator=CompositeAuthenticator(reject_oidc, accounts),
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/proposals",
+        json=proposal_document(),
+        headers={"authorization": f"Bearer {issued.token}"},
+    )
+
+    assert response.status_code == 202
+    assert response.json()["state"] == "RESERVED"
 
 
 def test_expired_proposal_is_retained_as_a_denied_decision():

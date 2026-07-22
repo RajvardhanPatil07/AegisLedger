@@ -9,7 +9,9 @@ from tests_support import active_services
 
 from aegisledger.api import create_app
 from aegisledger.auth import Principal, Role
+from aegisledger.main import build_authenticator
 from aegisledger.observability import JsonLogFormatter, configure_observability
+from aegisledger.service_accounts import CompositeAuthenticator
 from aegisledger.settings import Settings
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -38,6 +40,39 @@ def test_allowed_build_measurements_accept_csv_environment_value(monkeypatch):
     )
 
     assert settings.allowed_build_measurements == ("trusted-a", "trusted-b")
+
+
+def test_service_authentication_requires_durable_state():
+    with pytest.raises(ValidationError, match="service account authentication requires postgres"):
+        Settings(
+            environment="test",
+            state_backend="memory",
+            service_account_auth_enabled=True,
+            policy_signing_seed="test-seed",
+            commit_sha="a" * 40,
+            _env_file=None,
+        )
+
+
+def test_runtime_builds_composite_authentication_in_the_configured_scope(monkeypatch):
+    monkeypatch.setenv("AEGIS_OIDC_ISSUER", "http://localhost:8080/realms/aegisledger")
+    monkeypatch.setenv("AEGIS_OIDC_AUDIENCE", "aegisledger-api")
+    monkeypatch.setenv("AEGIS_OIDC_JWKS_URL", "http://localhost:8080/certs")
+    settings = Settings(
+        environment="test",
+        state_backend="postgres",
+        database_url="postgresql://aegis:example@localhost/aegis",
+        service_account_auth_enabled=True,
+        organization_id="acme",
+        deployment_environment_id="staging",
+        policy_signing_seed="test-seed",
+        commit_sha="a" * 40,
+        _env_file=None,
+    )
+
+    authenticator = build_authenticator(settings)
+
+    assert isinstance(authenticator, CompositeAuthenticator)
 
 
 def test_metrics_and_request_ids_are_exposed_without_entering_signing_path():
@@ -151,6 +186,17 @@ def test_compose_api_port_is_loopback_only_and_locally_overridable():
     assert compose["services"]["api"]["ports"] == [
         "127.0.0.1:${AEGIS_API_PORT:-8000}:8000"
     ]
+
+
+def test_compose_enables_service_authentication_inside_one_deployment_scope():
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    environment = compose["services"]["api"]["environment"]
+
+    assert environment["AEGIS_SERVICE_ACCOUNT_AUTH_ENABLED"] == "true"
+    assert environment["AEGIS_ORGANIZATION_ID"] == "${AEGIS_ORGANIZATION_ID:-local}"
+    assert environment["AEGIS_DEPLOYMENT_ENVIRONMENT_ID"] == (
+        "${AEGIS_DEPLOYMENT_ENVIRONMENT_ID:-development}"
+    )
 
 
 def test_demo_target_honors_host_port_overrides():

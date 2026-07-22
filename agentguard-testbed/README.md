@@ -67,6 +67,27 @@ Sign in as `researcher` with the generated `DEV_RESEARCHER_PASSWORD` from
 `.env.local`. The policy-administrator and auditor accounts intentionally
 require TOTP enrollment before their privileged controls become available.
 
+Agent clients can use a deployment-scoped service credential instead of a human
+OIDC session. Create a 90-day credential from the running API container; the raw
+token is printed once and only its digest is retained:
+
+```bash
+docker compose --env-file .env.local exec --no-TTY api \
+  aegisledger service-account create \
+  --name local-agent \
+  --subject 00000000-0000-4000-8000-000000000101 \
+  --permission proposals:read \
+  --permission proposals:write
+```
+
+The local subject above is the stable Keycloak ID for `researcher`. Store the
+returned token in a secret manager and send it as a Bearer credential.
+Revoke it by credential ID with `aegisledger service-account revoke <UUID>` in
+the API container. The credential subject must be enabled by the active policy.
+The current implementation provides one organization/environment boundary per
+deployment; it does not claim shared-database multi-tenancy. See
+[ADR 0004](docs/adr/0004-dedicated-deployment-service-auth.md).
+
 If either public demo port is already in use, override it without editing the
 Compose file:
 

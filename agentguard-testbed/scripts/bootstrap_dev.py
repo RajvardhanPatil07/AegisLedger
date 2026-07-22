@@ -172,6 +172,8 @@ def generate_environment(signer_identity: str) -> None:
         "AEGIS_ALLOWED_POLICY_HASHES": policy.policy_hash(),
         "AEGIS_COMMIT_SHA": commit,
         "AEGIS_SIGNER_IDENTITY": signer_identity,
+        "AEGIS_ORGANIZATION_ID": "local",
+        "AEGIS_DEPLOYMENT_ENVIRONMENT_ID": "development",
     }
     values = {
         **defaults,

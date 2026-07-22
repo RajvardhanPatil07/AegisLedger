@@ -8,10 +8,12 @@ import re
 import secrets
 import threading
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Protocol
+
+from fastapi import Request
 
 from .auth import AuthenticationError, Permission, Principal, PrincipalKind
 from .canonical import uuid7
@@ -90,6 +92,83 @@ class MemoryServiceAccountStore:
             if record.credential_id == credential_id:
                 return key_id, record
         raise KeyError(f"unknown service credential {credential_id}")
+
+
+class PostgresServiceAccountStore:
+    """Durable credential metadata; raw bearer tokens are never persisted."""
+
+    def __init__(self, dsn: str) -> None:
+        import psycopg
+
+        self._psycopg = psycopg
+        self._dsn = dsn
+
+    def create(self, record: ServiceAccountRecord) -> None:
+        with self._psycopg.connect(self._dsn) as connection:
+            connection.execute(
+                """INSERT INTO service_account_credentials
+                   (credential_id,key_id,name,subject,organization_id,environment_id,
+                    permissions,token_digest,created_at,expires_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (
+                    record.credential_id,
+                    record.key_id,
+                    record.name,
+                    record.subject,
+                    record.organization_id,
+                    record.environment_id,
+                    [permission.value for permission in sorted(record.permissions)],
+                    record.token_digest,
+                    record.created_at,
+                    record.expires_at,
+                ),
+            )
+
+    def get_by_key_id(self, key_id: uuid.UUID) -> ServiceAccountRecord | None:
+        with self._psycopg.connect(self._dsn) as connection:
+            row = connection.execute(
+                """SELECT credential_id,key_id,name,subject,organization_id,environment_id,
+                          permissions,token_digest,created_at,expires_at,revoked_at,last_used_at
+                   FROM service_account_credentials WHERE key_id=%s""",
+                (key_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return ServiceAccountRecord(
+            credential_id=row[0],
+            key_id=row[1],
+            name=row[2],
+            subject=row[3],
+            organization_id=row[4],
+            environment_id=row[5],
+            permissions=frozenset(Permission(value) for value in row[6]),
+            token_digest=row[7],
+            created_at=row[8],
+            expires_at=row[9],
+            revoked_at=row[10],
+            last_used_at=row[11],
+        )
+
+    def revoke(self, credential_id: uuid.UUID, revoked_at: datetime) -> None:
+        with self._psycopg.connect(self._dsn) as connection:
+            row = connection.execute(
+                """UPDATE service_account_credentials
+                   SET revoked_at=COALESCE(revoked_at,%s)
+                   WHERE credential_id=%s RETURNING credential_id""",
+                (revoked_at, credential_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"unknown service credential {credential_id}")
+
+    def mark_used(self, credential_id: uuid.UUID, used_at: datetime) -> None:
+        with self._psycopg.connect(self._dsn) as connection:
+            row = connection.execute(
+                """UPDATE service_account_credentials SET last_used_at=%s
+                   WHERE credential_id=%s RETURNING credential_id""",
+                (used_at, credential_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"unknown service credential {credential_id}")
 
 
 class ServiceAccountManager:
@@ -197,6 +276,25 @@ class ServiceAccountManager:
 
     def _now(self) -> datetime:
         return _as_utc(self._clock())
+
+
+class CompositeAuthenticator:
+    """Route Aegis service tokens locally and all other tokens to OIDC."""
+
+    def __init__(
+        self,
+        oidc_authenticator: Callable[[Request], Principal | Awaitable[Principal]],
+        service_accounts: ServiceAccountManager,
+    ) -> None:
+        self._oidc_authenticator = oidc_authenticator
+        self._service_accounts = service_accounts
+
+    def __call__(self, request: Request) -> Principal | Awaitable[Principal]:
+        authorization = request.headers.get("authorization", "")
+        scheme, _, token = authorization.partition(" ")
+        if scheme.lower() == "bearer" and token.startswith(f"{_TOKEN_PREFIX}_"):
+            return self._service_accounts.authenticate(token)
+        return self._oidc_authenticator(request)
 
 
 def _parse_key_id(token: str) -> uuid.UUID:

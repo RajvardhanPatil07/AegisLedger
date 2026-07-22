@@ -411,6 +411,27 @@ def test_codeql_workflow_has_private_repository_upload_permissions():
     }
 
 
+def test_codeql_workflow_skips_unsupported_private_repository_analysis():
+    workflow = yaml.safe_load(
+        (ROOT.parent / ".github" / "workflows" / "codeql.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    analyze = workflow["jobs"]["analyze"]
+    codeql_steps = [
+        step
+        for step in analyze["steps"]
+        if step.get("uses", "").startswith("github/codeql-action/")
+    ]
+
+    assert analyze["env"]["CODEQL_ENABLED"] == (
+        "${{ github.event.repository.private == false "
+        "|| vars.CODEQL_ENABLED == 'true' }}"
+    )
+    assert len(codeql_steps) == 2
+    assert all(step["if"] == "env.CODEQL_ENABLED == 'true'" for step in codeql_steps)
+
+
 def test_release_tags_run_every_required_remote_gate():
     workflow_root = ROOT.parent / ".github" / "workflows"
     required = ("ci.yml", "codeql.yml", "mutation.yml", "runtime-smoke.yml", "security.yml")

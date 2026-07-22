@@ -23,6 +23,8 @@ jobs:
     name: Analyze ${{ matrix.language }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      CODEQL_ENABLED: ${{ github.event.repository.private == false || vars.CODEQL_ENABLED == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -31,10 +33,17 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
+      - name: Explain unavailable private-repository analysis
+        if: env.CODEQL_ENABLED != 'true'
+        run: >-
+          echo "CodeQL upload requires GitHub Code Security for private repositories;
+          set the CODEQL_ENABLED repository variable only after that feature is enabled."
       - uses: github/codeql-action/init@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+        if: env.CODEQL_ENABLED == 'true'
         with:
           languages: ${{ matrix.language }}
           queries: security-extended
       - uses: github/codeql-action/analyze@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+        if: env.CODEQL_ENABLED == 'true'
         with:
           category: "/language:${{ matrix.language }}"

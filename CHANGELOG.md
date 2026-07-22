@@ -7,8 +7,9 @@ Semantic Versioning while its public contracts stabilize.
 
 ### Security
 
-- Grant the private-repository CodeQL job the minimum `actions: read`
-  permission required to upload and report analysis results.
+- Avoid false-failing CodeQL jobs in private repositories where GitHub Code
+  Security is unavailable, while retaining the permissions required when the
+  repository is public or licensed private analysis is explicitly enabled.
 - Bind public-release assurance to the exact checked-out commit and run every
   required remote gate automatically for `v*` tags.
 - Stage file-backed Compose secrets into service-owned, mode-`0400` volumes so

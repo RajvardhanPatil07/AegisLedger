@@ -51,7 +51,9 @@ provenance. It must be green before changing repository visibility.
    checks, and Slither medium/high gate.
 4. Console/Node 24: TypeScript, component tests, production build, Chromium
    Playwright flows, responsive layouts, and Axe checks.
-5. CodeQL security-extended analysis for Python and JavaScript/TypeScript.
+5. CodeQL security-extended analysis for Python and JavaScript/TypeScript when
+   the repository is public, or when GitHub Code Security is enabled for the
+   private repository and the `CODEQL_ENABLED` repository variable is `true`.
 6. Full-history Gitleaks plus Trivy HIGH/CRITICAL scans for API, signer, and
    console images.
 7. CycloneDX SBOMs for all three shipped images and BuildKit provenance metadata.

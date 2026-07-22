@@ -9,7 +9,9 @@ from tests_support import active_services
 
 from aegisledger.api import create_app
 from aegisledger.auth import Principal, Role
+from aegisledger.main import build_authenticator
 from aegisledger.observability import JsonLogFormatter, configure_observability
+from aegisledger.service_accounts import CompositeAuthenticator
 from aegisledger.settings import Settings
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -38,6 +40,39 @@ def test_allowed_build_measurements_accept_csv_environment_value(monkeypatch):
     )
 
     assert settings.allowed_build_measurements == ("trusted-a", "trusted-b")
+
+
+def test_service_authentication_requires_durable_state():
+    with pytest.raises(ValidationError, match="service account authentication requires postgres"):
+        Settings(
+            environment="test",
+            state_backend="memory",
+            service_account_auth_enabled=True,
+            policy_signing_seed="test-seed",
+            commit_sha="a" * 40,
+            _env_file=None,
+        )
+
+
+def test_runtime_builds_composite_authentication_in_the_configured_scope(monkeypatch):
+    monkeypatch.setenv("AEGIS_OIDC_ISSUER", "http://localhost:8080/realms/aegisledger")
+    monkeypatch.setenv("AEGIS_OIDC_AUDIENCE", "aegisledger-api")
+    monkeypatch.setenv("AEGIS_OIDC_JWKS_URL", "http://localhost:8080/certs")
+    settings = Settings(
+        environment="test",
+        state_backend="postgres",
+        database_url="postgresql://aegis:example@localhost/aegis",
+        service_account_auth_enabled=True,
+        organization_id="acme",
+        deployment_environment_id="staging",
+        policy_signing_seed="test-seed",
+        commit_sha="a" * 40,
+        _env_file=None,
+    )
+
+    authenticator = build_authenticator(settings)
+
+    assert isinstance(authenticator, CompositeAuthenticator)
 
 
 def test_metrics_and_request_ids_are_exposed_without_entering_signing_path():
@@ -153,6 +188,25 @@ def test_compose_api_port_is_loopback_only_and_locally_overridable():
     ]
 
 
+def test_compose_enables_service_authentication_inside_one_deployment_scope():
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    environment = compose["services"]["api"]["environment"]
+
+    assert environment["AEGIS_SERVICE_ACCOUNT_AUTH_ENABLED"] == "true"
+    assert environment["AEGIS_ORGANIZATION_ID"] == "${AEGIS_ORGANIZATION_ID:-local}"
+    assert environment["AEGIS_DEPLOYMENT_ENVIRONMENT_ID"] == (
+        "${AEGIS_DEPLOYMENT_ENVIRONMENT_ID:-development}"
+    )
+
+
+def test_demo_target_honors_host_port_overrides():
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+
+    assert "export AEGIS_API_PORT AEGIS_WEB_PORT" in makefile
+    assert "http://127.0.0.1:$(AEGIS_API_PORT)/health/ready" in makefile
+    assert "Console: http://localhost:$(AEGIS_WEB_PORT)" in makefile
+
+
 def test_api_runtime_uses_current_digest_pinned_python_base():
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 
@@ -188,7 +242,7 @@ def test_console_is_loopback_only_and_has_no_signer_dependency():
     web = compose["services"]["web"]
 
     assert web["ports"] == ["127.0.0.1:${AEGIS_WEB_PORT:-4173}:8080"]
-    assert set(web["depends_on"]) == {"api"}
+    assert set(web["depends_on"]) == {"api", "keycloak-config-init"}
     assert web["read_only"] is True
     assert "no-new-privileges:true" in web["security_opt"]
     assert web["healthcheck"]["test"][-1] == "http://127.0.0.1:8080/"
@@ -230,6 +284,52 @@ def test_keycloak_console_client_is_self_contained_and_emits_api_roles():
         user.get("email") and user.get("firstName") and user.get("lastName")
         for user in realm["users"]
     )
+
+
+def test_keycloak_console_client_accepts_configured_loopback_origins():
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    realm = yaml.safe_load(
+        (ROOT / "deploy" / "keycloak" / "aegisledger-realm.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    client = next(
+        item for item in realm["clients"] if item["clientId"] == "aegisledger-console"
+    )
+
+    assert compose["services"]["keycloak"]["environment"]["AEGIS_WEB_PORT"] == (
+        "${AEGIS_WEB_PORT:-4173}"
+    )
+    assert client["redirectUris"] == [
+        "http://localhost:${AEGIS_WEB_PORT}/*",
+        "http://127.0.0.1:${AEGIS_WEB_PORT}/*",
+        "http://localhost:5173/*",
+        "http://127.0.0.1:5173/*",
+    ]
+    assert client["webOrigins"] == [
+        "http://localhost:${AEGIS_WEB_PORT}",
+        "http://127.0.0.1:${AEGIS_WEB_PORT}",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+
+
+def test_keycloak_config_init_reconciles_custom_port_before_web_start():
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    services = compose["services"]
+    keycloak_init = services["keycloak-config-init"]
+    script = (ROOT / "scripts" / "configure_keycloak.sh").read_text(encoding="utf-8")
+
+    assert keycloak_init["image"] == services["keycloak"]["image"]
+    assert keycloak_init["environment"]["AEGIS_WEB_PORT"] == "${AEGIS_WEB_PORT:-4173}"
+    assert keycloak_init["depends_on"]["keycloak"] == {"condition": "service_started"}
+    assert keycloak_init["read_only"] is True
+    assert "no-new-privileges:true" in keycloak_init["security_opt"]
+    assert services["web"]["depends_on"]["keycloak-config-init"] == {
+        "condition": "service_completed_successfully"
+    }
+    assert "http://localhost:${AEGIS_WEB_PORT}/*" in script
+    assert "http://127.0.0.1:${AEGIS_WEB_PORT}/*" in script
 
 
 def test_formal_checker_has_digest_pinned_container_fallback():
@@ -295,3 +395,62 @@ def test_security_workflow_keeps_scanner_cache_outside_repository():
         step["with"].get("cache-dir") == "${{ runner.temp }}/trivy-cache"
         for step in trivy_steps
     )
+
+
+def test_codeql_workflow_has_private_repository_upload_permissions():
+    workflow = yaml.safe_load(
+        (ROOT.parent / ".github" / "workflows" / "codeql.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert workflow["permissions"] == {
+        "actions": "read",
+        "contents": "read",
+        "security-events": "write",
+    }
+
+
+def test_codeql_workflow_skips_unsupported_private_repository_analysis():
+    workflow = yaml.safe_load(
+        (ROOT.parent / ".github" / "workflows" / "codeql.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    analyze = workflow["jobs"]["analyze"]
+    codeql_steps = [
+        step
+        for step in analyze["steps"]
+        if step.get("uses", "").startswith("github/codeql-action/")
+    ]
+
+    assert analyze["env"]["CODEQL_ENABLED"] == (
+        "${{ github.event.repository.private == false "
+        "|| vars.CODEQL_ENABLED == 'true' }}"
+    )
+    assert len(codeql_steps) == 2
+    assert all(step["if"] == "env.CODEQL_ENABLED == 'true'" for step in codeql_steps)
+
+
+def test_release_tags_run_every_required_remote_gate():
+    workflow_root = ROOT.parent / ".github" / "workflows"
+    required = ("ci.yml", "codeql.yml", "mutation.yml", "runtime-smoke.yml", "security.yml")
+
+    for name in required:
+        workflow = yaml.safe_load(
+            (workflow_root / name).read_text(encoding="utf-8")
+        )
+        # PyYAML 1.1 resolves the unquoted GitHub Actions `on` key to True.
+        assert workflow[True]["push"]["tags"] == ["v*"], name
+
+
+def test_ci_auto_validates_candidate_prepared_and_tagged_release_metadata():
+    workflow = yaml.safe_load(
+        (ROOT.parent / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    steps = workflow["jobs"]["python"]["steps"]
+    metadata_step = next(
+        step for step in steps if step.get("name") == "Validate release metadata"
+    )
+
+    assert metadata_step["run"] == "uv run python scripts/check_release_metadata.py --mode auto"

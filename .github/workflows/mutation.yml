@@ -1,6 +1,8 @@
 name: Mutation testing
 
 on:
+  push:
+    tags: ["v*"]
   schedule:
     - cron: "11 1 * * 6"
   workflow_dispatch:

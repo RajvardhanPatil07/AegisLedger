@@ -34,6 +34,16 @@ type AppProps = {
   demoMode?: boolean;
 };
 
+export function hasRealmRole(
+  profile: Record<string, unknown> | undefined,
+  role: string,
+): boolean {
+  const realmAccess = profile?.realm_access;
+  if (!realmAccess || typeof realmAccess !== "object") return false;
+  const roles = (realmAccess as { roles?: unknown }).roles;
+  return Array.isArray(roles) && roles.some((candidate) => candidate === role);
+}
+
 export function App({ demoMode = import.meta.env.VITE_DEMO_MODE === "true" }: AppProps) {
   const [section, setSection] = useState<ConsoleSection>("overview");
   const [user, setUser] = useState<User | null>(null);
@@ -197,7 +207,12 @@ export function App({ demoMode = import.meta.env.VITE_DEMO_MODE === "true" }: Ap
           {section === "transactions" && <Transactions api={api} notify={setNotice} />}
           {section === "experiments" && <Experiments api={api} notify={setNotice} />}
           {section === "evidence" && (
-            <Evidence api={api} initialProposalId={DEMO_PROPOSAL_ID} notify={setNotice} />
+            <Evidence
+              api={api}
+              canReadAudit={demoMode || hasRealmRole(user?.profile, "auditor")}
+              initialProposalId={DEMO_PROPOSAL_ID}
+              notify={setNotice}
+            />
           )}
         </main>
       </div>

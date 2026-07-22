@@ -18,8 +18,21 @@ class Settings(BaseSettings):
     )
 
     environment: Literal["development", "test", "production"] = "development"
+    organization_id: str = Field(
+        default="local",
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:@/-]*$",
+    )
+    deployment_environment_id: str = Field(
+        default="development",
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:@/-]*$",
+    )
     state_backend: Literal["memory", "postgres"] = "postgres"
     database_url: str | None = None
+    service_account_auth_enabled: bool = False
     policy_signing_seed: SecretStr
     policy_decision_lifetime_seconds: int = Field(default=30, gt=0, le=300)
     bootstrap_development_policy: bool = False
@@ -71,6 +84,8 @@ class Settings(BaseSettings):
     def durable_production_state(self) -> Settings:
         if self.state_backend == "postgres" and not self.database_url:
             raise ValueError("postgres state requires AEGIS_DATABASE_URL")
+        if self.service_account_auth_enabled and self.state_backend != "postgres":
+            raise ValueError("service account authentication requires postgres state")
         if self.environment == "production":
             if self.state_backend != "postgres":
                 raise ValueError("production requires postgres state")

@@ -40,8 +40,18 @@
       "publicClient": true,
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
-      "redirectUris": ["http://localhost:4173/*", "http://localhost:5173/*"],
-      "webOrigins": ["http://localhost:4173", "http://localhost:5173"],
+      "redirectUris": [
+        "http://localhost:${AEGIS_WEB_PORT}/*",
+        "http://127.0.0.1:${AEGIS_WEB_PORT}/*",
+        "http://localhost:5173/*",
+        "http://127.0.0.1:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:${AEGIS_WEB_PORT}",
+        "http://127.0.0.1:${AEGIS_WEB_PORT}",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173"
+      ],
       "defaultClientScopes": ["aegisledger-api-audience"],
       "protocolMappers": [
         {

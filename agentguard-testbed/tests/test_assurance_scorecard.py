@@ -106,6 +106,24 @@ def test_all_passed_gates_make_track_ready(tmp_path: Path):
     assert reasons == []
 
 
+def test_ready_track_must_match_the_expected_candidate_commit(tmp_path: Path):
+    (tmp_path / "README.md").write_text("release policy\n", encoding="utf-8")
+    report = scorecard(status="passed")
+
+    ready, reasons = track_readiness(
+        report,
+        "public_release",
+        tmp_path,
+        today=date(2026, 7, 19),
+        expected_commit="b" * 40,
+    )
+
+    assert not ready
+    assert reasons == [
+        "candidate_commit does not match checked-out commit: " + ("b" * 40)
+    ]
+
+
 def test_unknown_track_and_invalid_status_fail_closed(tmp_path: Path):
     (tmp_path / "README.md").write_text("release policy\n", encoding="utf-8")
     report = scorecard()

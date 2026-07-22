@@ -67,6 +67,9 @@ hardware isolation or remote-attestation trust.
 ## Service controls
 
 - OIDC audience/issuer/JWKS verification, role checks, and proposal ownership.
+- Deployment-scoped agent credentials with one-time 256-bit bearer secrets,
+  digest-only storage, explicit permissions, expiry, revocation, and generic
+  authentication failures. Shared-database multi-tenancy is not claimed.
 - ASGI-layer streaming body cap even when `Content-Length` is absent or false.
 - Durable per-principal fixed-window rate limits and active experiment quotas.
 - Append-only, PostgreSQL-trigger-protected hash-chained audit events.

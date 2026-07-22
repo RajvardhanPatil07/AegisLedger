@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from .api import ServiceContainer, create_app
+from .api import Authenticator, ServiceContainer, create_app
 from .artifact_store import (
     AuthorizationArtifactStore,
     MemoryAuthorizationArtifactStore,
@@ -16,6 +16,7 @@ from .attestation_store import (
     PostgresAttestationStore,
 )
 from .audit import AuditJournal, EventJournal, PostgresAuditJournal
+from .auth import OIDCAuthenticator
 from .chain import ChainBackend, JsonRpcChainBackend
 from .decisions import DecisionIssuer
 from .experiment_store import ExperimentStore, MemoryExperimentStore, PostgresExperimentStore
@@ -30,6 +31,11 @@ from .reconciler import (
     ReceiptBackend,
     SettlementReconciler,
     SettlementStore,
+)
+from .service_accounts import (
+    CompositeAuthenticator,
+    PostgresServiceAccountStore,
+    ServiceAccountManager,
 )
 from .settings import Settings
 from .signer_client import GrpcSignerClient
@@ -142,10 +148,30 @@ def build_services(settings: Settings) -> ServiceContainer:
     return services
 
 
+def build_authenticator(settings: Settings) -> Authenticator:
+    oidc = OIDCAuthenticator.from_environment(
+        organization_id=settings.organization_id,
+        environment_id=settings.deployment_environment_id,
+    )
+    if not settings.service_account_auth_enabled:
+        return oidc
+    if settings.database_url is None:
+        raise ValueError("service account authentication requires a database URL")
+    accounts = ServiceAccountManager(
+        PostgresServiceAccountStore(settings.database_url),
+        organization_id=settings.organization_id,
+        environment_id=settings.deployment_environment_id,
+    )
+    return CompositeAuthenticator(oidc, accounts)
+
+
 def create_application() -> FastAPI:
     settings = Settings()  # type: ignore[call-arg]
     configure_logging(service_name=settings.service_name, level=settings.log_level)
-    application = create_app(build_services(settings))
+    application = create_app(
+        build_services(settings),
+        authenticator=build_authenticator(settings),
+    )
     configure_observability(
         application,
         service_name=settings.service_name,

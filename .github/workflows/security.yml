@@ -117,7 +117,7 @@ jobs:
             --metadata-file artifacts/aegisledger-console.provenance.json \
             --tag aegisledger-console:ci web
       - name: Scan API image
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: aegisledger-api:ci
           cache-dir: ${{ runner.temp }}/trivy-cache
@@ -126,7 +126,7 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "1"
       - name: Scan signer image
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: aegisledger-signer:ci
           cache-dir: ${{ runner.temp }}/trivy-cache
@@ -135,7 +135,7 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "1"
       - name: Scan console image
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: aegisledger-console:ci
           cache-dir: ${{ runner.temp }}/trivy-cache
@@ -144,21 +144,21 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "1"
       - name: Generate API CycloneDX SBOM
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: aegisledger-api:ci
           cache-dir: ${{ runner.temp }}/trivy-cache
           format: cyclonedx
           output: agentguard-testbed/artifacts/aegisledger-api.cdx.json
       - name: Generate signer CycloneDX SBOM
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: aegisledger-signer:ci
           cache-dir: ${{ runner.temp }}/trivy-cache
           format: cyclonedx
           output: agentguard-testbed/artifacts/aegisledger-signer.cdx.json
       - name: Generate console CycloneDX SBOM
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: aegisledger-console:ci
           cache-dir: ${{ runner.temp }}/trivy-cache

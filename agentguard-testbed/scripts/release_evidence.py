@@ -219,7 +219,12 @@ def git_commit(repository_root: Path) -> str:
     return commit
 
 
-def git_is_clean(repository_root: Path) -> bool:
+def git_is_clean(
+    repository_root: Path,
+    *,
+    allowed_untracked_root: Path | None = None,
+) -> bool:
+    """Return whether tracked files are clean, allowing generated artifacts only."""
     git = shutil.which("git")
     if git is None:
         raise RuntimeError("git is required to verify release evidence")
@@ -227,8 +232,24 @@ def git_is_clean(repository_root: Path) -> bool:
         [git, "-C", str(repository_root), "status", "--porcelain", "--untracked-files=all"],
         check=True,
         capture_output=True,
+        text=True,
     )
-    return not result.stdout
+    allowed_root = (
+        allowed_untracked_root.resolve()
+        if allowed_untracked_root is not None
+        else None
+    )
+    for raw_line in result.stdout.splitlines():
+        if not raw_line:
+            continue
+        status = raw_line[:2]
+        path_text = raw_line[3:]
+        if status == "??" and allowed_root is not None:
+            candidate = (repository_root / path_text).resolve()
+            if candidate.is_relative_to(allowed_root):
+                continue
+        return False
+    return True
 
 
 def _repository_path(repository_root: Path, value: Path) -> Path:
@@ -259,12 +280,12 @@ def main() -> int:
     repository_root = args.repository_root.resolve()
     commit = git_commit(repository_root)
     if args.command == "build":
-        if not git_is_clean(repository_root):
-            print("ERROR: repository must be clean before evidence is generated")
-            return 1
         output = _repository_path(repository_root, args.output).resolve()
         if not output.is_relative_to(repository_root):
             print("ERROR: manifest output must be inside the repository")
+            return 1
+        if not git_is_clean(repository_root, allowed_untracked_root=output.parent):
+            print("ERROR: repository has tracked or unexpected untracked changes")
             return 1
         artifacts = [
             _repository_path(repository_root, artifact) for artifact in args.artifact

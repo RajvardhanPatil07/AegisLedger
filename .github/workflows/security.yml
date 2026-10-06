@@ -64,6 +64,7 @@ jobs:
           cargo install cargo-deny --locked --version 0.20.2
       - name: Refresh audited Rust packages
         run: |
+          # Keep each precise update separate; cargo accepts one --precise per invocation.
           cargo update -p h2 --precise 0.4.16
           cargo update -p ruint --precise 1.20.0
           cargo update -p rustls --precise 0.23.45

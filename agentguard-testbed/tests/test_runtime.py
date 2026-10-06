@@ -211,13 +211,13 @@ def test_api_runtime_uses_current_digest_pinned_python_base():
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 
     assert (
-        "ghcr.io/astral-sh/uv:0.11.29@sha256:"
-        "eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc AS uv"
+        "ghcr.io/astral-sh/uv:0.12.22@sha256:"
+        "f513a91fc62fe7c17567eee97230dd198e43edb8a9fbecca843714a4358fe1bc AS uv"
         in dockerfile
     )
     assert (
-        "FROM python:3.13.14-slim-bookworm@sha256:"
-        "9d7f287598e1a5a978c015ee176d8216435aaf335ed69ac3c38dd1bbb10e8d64 AS runtime"
+        "FROM python:3.14.8-slim-bookworm@sha256:"
+        "c8137f4c460908c8763f281c8f22c431eb5c538514ba9553fc3a89c06b7cfb88 AS runtime"
         in dockerfile
     )
 

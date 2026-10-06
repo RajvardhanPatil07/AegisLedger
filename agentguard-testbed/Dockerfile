@@ -25,9 +25,9 @@ COPY scripts/api_entrypoint.sh /usr/local/bin/api-entrypoint
 COPY scripts/stage_runtime_secrets.sh /usr/local/bin/stage-runtime-secrets
 COPY scripts/runtime_smoke.py /app/scripts/runtime_smoke.py
 
-RUN python -m pip install --no-cache-dir --upgrade \
+RUN python -m pip uninstall -y setuptools \
+    && python -m pip install --no-cache-dir --upgrade \
       "pip>=26.1.2" \
-      "setuptools>=78.1.1" \
       "msgpack>=1.2.1" \
       "urllib3>=2.8" \
       "cryptography>=50.0.2" \

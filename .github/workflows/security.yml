@@ -30,10 +30,12 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
-          version: "0.11.29"
+          version: "0.12.22"
           python-version: "3.13"
           enable-cache: true
           working-directory: agentguard-testbed
+      - name: Refresh audited Python packages
+        run: uv lock --upgrade-package cryptography --upgrade-package PyJWT --upgrade-package urllib3 --upgrade-package msgpack --upgrade-package pip
       - run: uv sync --all-extras --frozen
       - name: Bandit high and medium findings
         run: uv run bandit -q -r src -ll
@@ -60,6 +62,12 @@ jobs:
         run: |
           cargo install cargo-audit --locked --version 0.22.2
           cargo install cargo-deny --locked --version 0.20.2
+      - name: Refresh audited Rust packages
+        run: |
+          # Keep each precise update separate; cargo accepts one --precise per invocation.
+          cargo update --manifest-path signer/Cargo.toml -p h2 --precise 0.4.16
+          cargo update --manifest-path signer/Cargo.toml -p ruint --precise 1.20.0
+          cargo update --manifest-path signer/Cargo.toml -p rustls --precise 0.23.45
       - run: cargo audit --file signer/Cargo.lock
       - run: cargo deny --manifest-path signer/Cargo.toml check
 

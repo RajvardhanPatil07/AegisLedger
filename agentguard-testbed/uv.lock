@@ -56,7 +56,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.13,<2" },
     { name = "bandit", extras = ["toml"], marker = "extra == 'dev'", specifier = ">=1.7,<2" },
     { name = "boto3", marker = "extra == 'aws'", specifier = ">=1.34,<2" },
-    { name = "cryptography", specifier = ">=48.0.1,<51" },
+    { name = "cryptography", specifier = ">=48.0.1,<50" },
     { name = "eth-hash", extras = ["pycryptodome"], specifier = ">=0.7,<1" },
     { name = "fastapi", specifier = ">=0.109,<1" },
     { name = "grpcio", specifier = ">=1.65,<2" },
@@ -73,7 +73,7 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.1,<4" },
     { name = "pydantic", specifier = ">=2.6,<3" },
     { name = "pydantic-settings", specifier = ">=2.2,<3" },
-    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.14,<3" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.8,<3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.3,<10" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=1.4,<2" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7,<8" },
@@ -503,7 +503,7 @@ toml = [
 
 [[package]]
 name = "cryptography"
-version = "50.0.0"
+version = "49.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cffi", marker = "platform_python_implementation != 'PyPy'" },
@@ -1397,7 +1397,7 @@ wheels = [
 
 [[package]]
 name = "pip"
-version = "26.2"
+version = "26.1.2"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/01/91/47e7d486260f618783899587af63ccf7980fb60245c3e63dd4571c6b57ad/pip-26.1.2.tar.gz", hash = "sha256:f49cd134c61cf2fd75e0ce2676db03e4054504a5a4986d00f8299ae632dc4605", size = 1840799, upload-time = "2026-05-31T17:33:58.56Z" }
 wheels = [
@@ -1754,7 +1754,7 @@ wheels = [
 
 [[package]]
 name = "pyjwt"
-version = "2.15.0"
+version = "2.13.0"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/3b/81/58d0ac84e1ef3a3843791d6954d94c0b33d526c75eeb1efbce9d0a4c4077/pyjwt-2.13.0.tar.gz", hash = "sha256:41571c89ca91598c79e8ef18a2d07367d4810fbbd6f637794879baf1b7703423", size = 107515, upload-time = "2026-05-21T19:54:36.618Z" }
 wheels = [
@@ -2160,7 +2160,7 @@ wheels = [
 
 [[package]]
 name = "urllib3"
-version = "2.8.0"
+version = "2.7.0"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/53/0c/06f8b233b8fd13b9e5ee11424ef85419ba0d8ba0b3138bf360be2ff56953/urllib3-2.7.0.tar.gz", hash = "sha256:231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c", size = 433602, upload-time = "2026-05-07T16:13:18.596Z" }
 wheels = [

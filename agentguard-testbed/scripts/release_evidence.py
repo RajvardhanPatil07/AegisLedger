@@ -228,26 +228,36 @@ def git_is_clean(
     git = shutil.which("git")
     if git is None:
         raise RuntimeError("git is required to verify release evidence")
+    diff = subprocess.run(  # noqa: S603 - fixed Git commands; no untrusted arguments
+        [git, "-C", str(repository_root), "diff", "--quiet"],
+        check=False,
+    )
+    if diff.returncode != 0:
+        return False
+
+    staged = subprocess.run(  # noqa: S603 - fixed Git commands; no untrusted arguments
+        [git, "-C", str(repository_root), "diff", "--cached", "--quiet"],
+        check=False,
+    )
+    if staged.returncode != 0:
+        return False
+
     result = subprocess.run(  # noqa: S603 - fixed Git command; no untrusted arguments
-        [git, "-C", str(repository_root), "status", "--porcelain", "--untracked-files=all"],
+        [git, "-C", str(repository_root), "ls-files", "--others", "--exclude-standard", "-z"],
         check=True,
         capture_output=True,
-        text=True,
     )
     allowed_root = (
         allowed_untracked_root.resolve()
         if allowed_untracked_root is not None
         else None
     )
-    for raw_line in result.stdout.splitlines():
-        if not raw_line:
+    for raw_path in result.stdout.split(b"\0"):
+        if not raw_path:
             continue
-        status = raw_line[:2]
-        path_text = raw_line[3:]
-        if status == "??" and allowed_root is not None:
-            candidate = (repository_root / path_text).resolve()
-            if candidate.is_relative_to(allowed_root):
-                continue
+        candidate = (repository_root / os.fsdecode(raw_path)).resolve()
+        if allowed_root is not None and candidate.is_relative_to(allowed_root):
+            continue
         return False
     return True
 

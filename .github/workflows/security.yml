@@ -35,7 +35,7 @@ jobs:
           enable-cache: true
           working-directory: agentguard-testbed
       - name: Refresh audited Python packages
-        run: uv lock --upgrade-package cryptography --upgrade-package PyJWT --upgrade-package urllib3 --upgrade-package msgpack --upgrade-package setuptools --upgrade-package pip
+        run: uv lock --upgrade-package cryptography --upgrade-package PyJWT --upgrade-package urllib3 --upgrade-package msgpack --upgrade-package pip
       - run: uv sync --all-extras --frozen
       - name: Bandit high and medium findings
         run: uv run bandit -q -r src -ll

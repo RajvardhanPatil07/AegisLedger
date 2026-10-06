@@ -21,7 +21,8 @@ COPY scripts/api_entrypoint.sh /usr/local/bin/api-entrypoint
 COPY scripts/stage_runtime_secrets.sh /usr/local/bin/stage-runtime-secrets
 COPY scripts/runtime_smoke.py /app/scripts/runtime_smoke.py
 
-RUN uv sync --frozen --no-dev --no-editable \
+RUN uv lock --upgrade-package cryptography --upgrade-package PyJWT --upgrade-package urllib3 --upgrade-package pip \
+    && uv sync --frozen --no-dev --no-editable \
     && chown -R aegis:aegis /app \
     && chmod 0555 /usr/local/bin/api-entrypoint /usr/local/bin/stage-runtime-secrets
 

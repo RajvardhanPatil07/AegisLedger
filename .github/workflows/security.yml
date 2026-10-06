@@ -65,9 +65,9 @@ jobs:
       - name: Refresh audited Rust packages
         run: |
           # Keep each precise update separate; cargo accepts one --precise per invocation.
-          cargo update -p h2 --precise 0.4.16
-          cargo update -p ruint --precise 1.20.0
-          cargo update -p rustls --precise 0.23.45
+          cargo update --manifest-path signer/Cargo.toml -p h2 --precise 0.4.16
+          cargo update --manifest-path signer/Cargo.toml -p ruint --precise 1.20.0
+          cargo update --manifest-path signer/Cargo.toml -p rustls --precise 0.23.45
       - run: cargo audit --file signer/Cargo.lock
       - run: cargo deny --manifest-path signer/Cargo.toml check
 

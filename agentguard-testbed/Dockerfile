@@ -11,6 +11,10 @@ RUN groupadd --gid 10001 aegis \
        --shell /usr/sbin/nologin aegis
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=uv /uv /uvx /bin/
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
@@ -21,7 +25,14 @@ COPY scripts/api_entrypoint.sh /usr/local/bin/api-entrypoint
 COPY scripts/stage_runtime_secrets.sh /usr/local/bin/stage-runtime-secrets
 COPY scripts/runtime_smoke.py /app/scripts/runtime_smoke.py
 
-RUN uv lock --upgrade-package cryptography --upgrade-package PyJWT --upgrade-package urllib3 --upgrade-package pip \
+RUN python -m pip install --no-cache-dir --upgrade \
+      "pip>=26.1.2" \
+      "setuptools>=78.1.1" \
+      "msgpack>=1.2.1" \
+      "urllib3>=2.8" \
+      "cryptography>=50.0.2" \
+      "PyJWT>=2.14" \
+    && uv lock --upgrade-package cryptography --upgrade-package PyJWT --upgrade-package urllib3 --upgrade-package msgpack --upgrade-package pip \
     && uv sync --frozen --no-dev --no-editable \
     && chown -R aegis:aegis /app \
     && chmod 0555 /usr/local/bin/api-entrypoint /usr/local/bin/stage-runtime-secrets

@@ -34,7 +34,8 @@ jobs:
           python-version: "3.13"
           enable-cache: true
           working-directory: agentguard-testbed
-      - run: uv lock --upgrade
+      - name: Refresh audited Python packages
+        run: uv lock --upgrade-package cryptography --upgrade-package PyJWT --upgrade-package urllib3 --upgrade-package pip
       - run: uv sync --all-extras --frozen
       - name: Bandit high and medium findings
         run: uv run bandit -q -r src -ll
@@ -61,6 +62,8 @@ jobs:
         run: |
           cargo install cargo-audit --locked --version 0.22.2
           cargo install cargo-deny --locked --version 0.20.2
+      - name: Refresh audited Rust packages
+        run: cargo update -p h2 --precise 0.4.16 -p ruint --precise 1.20.0 -p rustls --precise 0.23.45
       - run: cargo audit --file signer/Cargo.lock
       - run: cargo deny --manifest-path signer/Cargo.toml check
 

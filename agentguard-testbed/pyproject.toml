@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 dependencies = [
   "alembic>=1.13,<2",
-  "cryptography>=48.0.1,<50",
+  "cryptography>=48.0.1,<51",
   "eth-hash[pycryptodome]>=0.7,<1",
   "fastapi>=0.109,<1",
   "grpcio>=1.65,<2",
@@ -25,7 +25,7 @@ dependencies = [
   "psycopg[binary]>=3.1,<4",
   "pydantic>=2.6,<3",
   "pydantic-settings>=2.2,<3",
-  "PyJWT[crypto]>=2.8,<3",
+  "PyJWT[crypto]>=2.15,<3",
   "PyYAML>=6,<7",
   "rfc8785>=0.1.4,<1",
   "sqlalchemy>=2.0,<3",

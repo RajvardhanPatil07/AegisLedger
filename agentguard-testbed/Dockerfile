@@ -30,13 +30,14 @@ RUN python -m pip install --no-cache-dir --upgrade \
       "setuptools>=78.1.1" \
     && uv lock --upgrade-package cryptography --upgrade-package PyJWT --upgrade-package urllib3 --upgrade-package msgpack --upgrade-package pip \
     && uv sync --frozen --no-dev --no-editable \
-    && uv pip install --python /app/.venv/bin/python --no-deps --upgrade \
+    && rm -rf /root/.cache/uv /root/.cache/pip \
+    && uv pip install --python /app/.venv/bin/python --no-cache --no-deps --upgrade \
       "setuptools>=78.1.1" \
       "msgpack>=1.2.1" \
       "urllib3>=2.8" \
       "cryptography>=50.0.2" \
       "PyJWT>=2.14" \
-    && rm -rf /root/.cache/uv \
+    && rm -rf /root/.cache/uv /root/.cache/pip \
     && chown -R aegis:aegis /app \
     && chmod 0555 /usr/local/bin/api-entrypoint /usr/local/bin/stage-runtime-secrets
 

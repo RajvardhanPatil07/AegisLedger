@@ -28,6 +28,10 @@ COPY scripts/runtime_smoke.py /app/scripts/runtime_smoke.py
 RUN uv sync --frozen --no-dev --no-editable \
     && uv pip install --python /app/.venv/bin/python --no-deps --upgrade \
       "setuptools>=78.1.1" \
+      "msgpack>=1.2.1" \
+      "urllib3>=2.8" \
+      "cryptography>=50.0.2" \
+      "PyJWT>=2.14" \
     && chown -R aegis:aegis /app \
     && chmod 0555 /usr/local/bin/api-entrypoint /usr/local/bin/stage-runtime-secrets
 

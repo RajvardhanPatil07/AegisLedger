@@ -16,6 +16,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=uv /uv /uvx /bin/
+COPY --from=runtime /usr/local/lib/python3.14/site-packages /tmp/base-python-site-packages
 COPY src ./src
 COPY migrations ./migrations
 COPY alembic.ini ./
@@ -40,6 +41,7 @@ RUN --mount=type=bind,source=pyproject.toml,target=/tmp/pyproject.toml \
       "cryptography>=50.0.2" \
       "PyJWT>=2.14" \
     && rm -rf /root/.cache/uv /root/.cache/pip \
+    && rm -rf /tmp/base-python-site-packages \
     && rm -f /app/uv.lock /app/pyproject.toml /app/README.md \
     && chown -R aegis:aegis /app \
     && chmod 0555 /usr/local/bin/api-entrypoint /usr/local/bin/stage-runtime-secrets

@@ -37,6 +37,7 @@ RUN python -m pip install --no-cache-dir --upgrade \
       "cryptography>=50.0.2" \
       "PyJWT>=2.14" \
     && rm -rf /root/.cache/uv /root/.cache/pip \
+    && rm -f /app/uv.lock /app/pyproject.toml /app/README.md \
     && chown -R aegis:aegis /app \
     && chmod 0555 /usr/local/bin/api-entrypoint /usr/local/bin/stage-runtime-secrets
 

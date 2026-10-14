@@ -29,8 +29,7 @@ RUN python -m pip install --no-cache-dir --upgrade \
       "pip>=26.1.2" \
       "setuptools>=78.1.1" \
     && uv lock --upgrade-package cryptography --upgrade-package PyJWT --upgrade-package urllib3 --upgrade-package msgpack --upgrade-package pip \
-    && uv sync --frozen --no-dev --no-editable \
-    && rm -rf /root/.cache/uv /root/.cache/pip \
+    && uv sync --no-cache --no-dev --no-editable \
     && uv pip install --python /app/.venv/bin/python --no-cache --no-deps --upgrade \
       "setuptools>=78.1.1" \
       "msgpack>=1.2.1" \

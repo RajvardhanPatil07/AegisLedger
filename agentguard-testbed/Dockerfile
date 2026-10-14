@@ -25,21 +25,9 @@ COPY scripts/api_entrypoint.sh /usr/local/bin/api-entrypoint
 COPY scripts/stage_runtime_secrets.sh /usr/local/bin/stage-runtime-secrets
 COPY scripts/runtime_smoke.py /app/scripts/runtime_smoke.py
 
-RUN python -c 'from pathlib import Path; import shutil; import sysconfig; site=Path(sysconfig.get_paths()["purelib"]); [shutil.rmtree(p) if p.is_dir() else p.unlink(missing_ok=True) for p in site.glob("setuptools*")]' \
-    && python -m pip install --no-cache-dir --upgrade \
-      "pip>=26.1.2" \
+RUN uv sync --frozen --no-dev --no-editable \
+    && uv pip install --python /app/.venv/bin/python --no-deps --upgrade \
       "setuptools>=78.1.1" \
-      "msgpack>=1.2.1" \
-      "urllib3>=2.8" \
-      "cryptography>=50.0.2" \
-      "PyJWT>=2.14" \
-    && uv lock --upgrade-package cryptography --upgrade-package PyJWT --upgrade-package urllib3 --upgrade-package msgpack --upgrade-package pip \
-    && uv sync --frozen --no-dev --no-editable \
-    && uv pip install --python /app/.venv/bin/python --upgrade \
-      "msgpack>=1.2.1" \
-      "urllib3>=2.8" \
-      "cryptography>=50.0.2" \
-      "PyJWT>=2.14" \
     && chown -R aegis:aegis /app \
     && chmod 0555 /usr/local/bin/api-entrypoint /usr/local/bin/stage-runtime-secrets
 

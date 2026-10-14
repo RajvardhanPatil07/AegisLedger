@@ -453,4 +453,6 @@ def test_ci_auto_validates_candidate_prepared_and_tagged_release_metadata():
         step for step in steps if step.get("name") == "Validate release metadata"
     )
 
-    assert metadata_step["run"] == "uv run --frozen python scripts/check_release_metadata.py --mode auto"
+    assert metadata_step["run"] == (
+        "uv run --frozen python scripts/check_release_metadata.py --mode auto"
+    )

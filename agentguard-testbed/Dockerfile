@@ -16,7 +16,6 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=uv /uv /uvx /bin/
-COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 COPY migrations ./migrations
 COPY alembic.ini ./
@@ -25,7 +24,11 @@ COPY scripts/api_entrypoint.sh /usr/local/bin/api-entrypoint
 COPY scripts/stage_runtime_secrets.sh /usr/local/bin/stage-runtime-secrets
 COPY scripts/runtime_smoke.py /app/scripts/runtime_smoke.py
 
-RUN python -m pip install --no-cache-dir --upgrade \
+RUN --mount=type=bind,source=pyproject.toml,target=/tmp/pyproject.toml \
+    --mount=type=bind,source=uv.lock,target=/tmp/uv.lock \
+    --mount=type=bind,source=README.md,target=/tmp/README.md \
+    cp /tmp/pyproject.toml /tmp/uv.lock /tmp/README.md /app/ \
+    && python -m pip install --no-cache-dir --upgrade \
       "pip>=26.1.2" \
       "setuptools>=78.1.1" \
     && uv lock --upgrade-package cryptography --upgrade-package PyJWT --upgrade-package urllib3 --upgrade-package msgpack --upgrade-package pip \

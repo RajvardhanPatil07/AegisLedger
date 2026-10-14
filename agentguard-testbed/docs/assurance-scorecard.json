@@ -1,16 +1,16 @@
 {
   "schema_version": "aegisledger.assurance_scorecard.v1",
   "candidate_commit": null,
-  "as_of": "2026-07-19",
+  "as_of": "2026-10-06",
   "tracks": {
     "research": {
-      "target_score": 10.0,
+      "target_score": 10,
       "gates": [
         {
           "id": "RES-01",
           "title": "Every material claim maps to reviewable evidence",
           "owner": "repository-owner",
-          "status": "in_progress",
+          "status": "expired",
           "review_by": "2026-09-30",
           "evidence": [
             {
@@ -24,7 +24,7 @@
           "id": "RES-02",
           "title": "Evaluation protocol is statistically predefined",
           "owner": "repository-owner",
-          "status": "pending",
+          "status": "expired",
           "review_by": "2026-09-30",
           "evidence": [
             {
@@ -38,7 +38,7 @@
           "id": "RES-03",
           "title": "Live-model, baseline, cost, latency, and gas results are reproducible",
           "owner": "repository-owner",
-          "status": "pending",
+          "status": "expired",
           "review_by": "2026-09-30",
           "evidence": [
             {
@@ -52,7 +52,7 @@
           "id": "RES-04",
           "title": "Independent replication and archival release are complete",
           "owner": "repository-owner",
-          "status": "blocked",
+          "status": "expired",
           "blocked_by": "Independent replicator and archival identifier are not yet selected",
           "review_by": "2026-09-30",
           "evidence": [
@@ -66,13 +66,13 @@
       ]
     },
     "public_release": {
-      "target_score": 10.0,
+      "target_score": 10,
       "gates": [
         {
           "id": "PUB-01",
           "title": "Patent and publication decision is recorded",
           "owner": "repository-owner",
-          "status": "blocked",
+          "status": "expired",
           "blocked_by": "Owner decision and any required qualified-counsel review are external",
           "review_by": "2026-08-31",
           "evidence": [
@@ -87,7 +87,7 @@
           "id": "PUB-02",
           "title": "Copyright, license, and asset provenance inventory is complete",
           "owner": "repository-owner",
-          "status": "in_progress",
+          "status": "expired",
           "review_by": "2026-08-31",
           "evidence": [
             {
@@ -111,7 +111,7 @@
           "id": "PUB-03",
           "title": "Every required gate passes for one exact candidate commit",
           "owner": "repository-owner",
-          "status": "blocked",
+          "status": "expired",
           "blocked_by": "Current candidate is local-only and lacks same-commit remote workflow evidence",
           "review_by": "2026-08-31",
           "evidence": [
@@ -141,7 +141,7 @@
           "id": "PUB-04",
           "title": "Protected main and repository security administration are enforced",
           "owner": "repository-owner",
-          "status": "blocked",
+          "status": "expired",
           "blocked_by": "Branch protection and repository rulesets are not enabled",
           "review_by": "2026-08-31",
           "evidence": [
@@ -156,7 +156,7 @@
           "id": "PUB-05",
           "title": "Release artifacts and images are signed and independently verifiable",
           "owner": "repository-owner",
-          "status": "pending",
+          "status": "expired",
           "review_by": "2026-08-31",
           "evidence": [
             {
@@ -170,7 +170,7 @@
           "id": "PUB-06",
           "title": "Independent public-release security assessment is complete",
           "owner": "repository-owner",
-          "status": "blocked",
+          "status": "expired",
           "blocked_by": "Independent reviewer has not assessed the final candidate",
           "review_by": "2026-08-31",
           "evidence": [
@@ -185,7 +185,7 @@
           "id": "PUB-07",
           "title": "Signed public release is reproducible from two clean accounts",
           "owner": "repository-owner",
-          "status": "blocked",
+          "status": "expired",
           "blocked_by": "Publication, governance, candidate evidence, signing, and independent review gates are open",
           "review_by": "2026-08-31",
           "evidence": [
@@ -199,7 +199,7 @@
       ]
     },
     "production_custody": {
-      "target_score": 10.0,
+      "target_score": 10,
       "gates": [
         {
           "id": "PRO-01",

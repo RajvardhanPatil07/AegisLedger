@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -219,16 +220,47 @@ def git_commit(repository_root: Path) -> str:
     return commit
 
 
-def git_is_clean(repository_root: Path) -> bool:
+def git_is_clean(
+    repository_root: Path,
+    *,
+    allowed_untracked_root: Path | None = None,
+) -> bool:
+    """Return whether tracked files are clean, allowing generated artifacts only."""
     git = shutil.which("git")
     if git is None:
         raise RuntimeError("git is required to verify release evidence")
+    diff = subprocess.run(  # noqa: S603 - fixed Git commands; no untrusted arguments
+        [git, "-C", str(repository_root), "diff", "--quiet"],
+        check=False,
+    )
+    if diff.returncode != 0:
+        return False
+
+    staged = subprocess.run(  # noqa: S603 - fixed Git commands; no untrusted arguments
+        [git, "-C", str(repository_root), "diff", "--cached", "--quiet"],
+        check=False,
+    )
+    if staged.returncode != 0:
+        return False
+
     result = subprocess.run(  # noqa: S603 - fixed Git command; no untrusted arguments
-        [git, "-C", str(repository_root), "status", "--porcelain", "--untracked-files=all"],
+        [git, "-C", str(repository_root), "ls-files", "--others", "--exclude-standard", "-z"],
         check=True,
         capture_output=True,
     )
-    return not result.stdout
+    allowed_root = (
+        allowed_untracked_root.resolve()
+        if allowed_untracked_root is not None
+        else None
+    )
+    for raw_path in result.stdout.split(b"\0"):
+        if not raw_path:
+            continue
+        candidate = (repository_root / os.fsdecode(raw_path)).resolve()
+        if allowed_root is not None and candidate.is_relative_to(allowed_root):
+            continue
+        return False
+    return True
 
 
 def _repository_path(repository_root: Path, value: Path) -> Path:
@@ -259,12 +291,12 @@ def main() -> int:
     repository_root = args.repository_root.resolve()
     commit = git_commit(repository_root)
     if args.command == "build":
-        if not git_is_clean(repository_root):
-            print("ERROR: repository must be clean before evidence is generated")
-            return 1
         output = _repository_path(repository_root, args.output).resolve()
         if not output.is_relative_to(repository_root):
             print("ERROR: manifest output must be inside the repository")
+            return 1
+        if not git_is_clean(repository_root, allowed_untracked_root=output.parent):
+            print("ERROR: repository has tracked or unexpected untracked changes")
             return 1
         artifacts = [
             _repository_path(repository_root, artifact) for artifact in args.artifact
